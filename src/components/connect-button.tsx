@@ -18,16 +18,14 @@ export function ConnectButton() {
   const disconnect = useCallback(() => {
     if (connectState === "disconnected") return;
     provider?.disconnect();
-    // eslint-disable-next-line @eslint-react/hooks-extra/no-direct-set-state-in-use-effect -- shameful ignore for now
     setProvider(undefined);
-    // eslint-disable-next-line @eslint-react/hooks-extra/no-direct-set-state-in-use-effect -- shameful ignore for now
     setConnectState("disconnected");
   }, [connectState, provider]);
 
   // This effect is for convenience, it is evil. We should add the connect logic to global state and handle it there.
   useEffect(() => {
-    // Disconnect when the yDoc changes
-    if (connectState === "disconnected") return;
+    // Disconnect when the yDoc changes, but not if we're still connecting
+    if (connectState === "disconnected" || connectState === "connecting") return;
     if (!provider) {
       console.error(
         "Provider should be defined when connectState is not disconnected",
@@ -42,19 +40,30 @@ export function ConnectButton() {
   }, [yDoc, disconnect, provider, connectState]);
 
   const onConnect = useCallback(
-    (provider: ConnectProvider) => {
-      if (connectState !== "disconnected") {
-        throw new Error("Should not be able to connect when already connected");
+    (newProvider: ConnectProvider) => {
+      if (connectState === "connecting") {
+        throw new Error("Should not be able to connect when already connecting");
       }
-      provider.connect();
+
+      // If already connected, disconnect first
+      if (connectState === "connected") {
+        provider?.disconnect();
+      }
+
+      newProvider.connect();
       setConnectState("connecting");
-      provider.waitForSynced().then(() => {
+      setProvider(newProvider);
+
+      newProvider.waitForSynced().then(() => {
         setConnectState("connected");
+        setOpen(false);
+      }).catch((err) => {
+        console.error("Connection failed:", err);
+        setConnectState("disconnected");
+        setProvider(undefined);
       });
-      setProvider(provider);
-      setOpen(false);
     },
-    [connectState],
+    [connectState, provider],
   );
 
   const handleClick = () => {
