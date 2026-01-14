@@ -4,13 +4,13 @@ import { RocketIcon, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import * as Y from "yjs";
 import { ConnectProvider } from "../providers/types";
-import { useYDoc } from "../state/index";
-import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
+import { useConfig, useYDoc } from "../state/index";
+import { DocumentBrowser } from "./document-browser";
+import { Alert, AlertDescription } from "./ui/alert";
 import { Button } from "./ui/button";
 import {
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "./ui/dialog";
@@ -19,9 +19,7 @@ import { Label } from "./ui/label";
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
@@ -88,182 +86,310 @@ export function ConnectDialog({
   onConnect: (provider: ConnectProvider) => void;
 }) {
   const [yDoc, setYDoc] = useYDoc();
+  const [config, setConfig] = useConfig();
   const [url, setUrl] = useState("wss://demos.yjs.dev/ws");
   const [room, setRoom] = useState(() => createDailyRoom("quill-demo"));
   const [provider, setProvider] = useState("Quill");
   const [needCreateNewDoc, setNeedCreateNewDoc] = useState(true);
+
   const officialDemo = officialDemos.find((demo) => demo.name === provider);
 
+  const handleCreateDocument = () => {
+    // TODO: Implement create document dialog
+    console.log("Create document not implemented yet");
+  };
+
+  const handleSelectDocument = (selectedRoom: string) => {
+    // Use the same connection flow as custom WebSocket
+    const doc = new Y.Doc();
+    setYDoc(doc);
+
+    // Create WebSocket URL from base URL: wss://instrumenta.cf/congruum/
+    const wsUrl = config.documentManager.baseUrl.replace(/^http/, "ws") + "/congruum/";
+
+    const connectProvider = new WebSocketConnectProvider(
+      wsUrl,
+      selectedRoom,
+      doc,
+    );
+
+    onConnect(connectProvider);
+  };
+
   return (
-    <DialogContent>
+    <DialogContent className="max-w-7xl max-h-[90vh] overflow-hidden">
       <DialogHeader>
-        <DialogTitle>Connect</DialogTitle>
+        <DialogTitle>Connect to Document</DialogTitle>
         <DialogDescription>
-          Collaborate with others by connecting to a shared YDoc
+          Browse and connect to collaborative documents
         </DialogDescription>
       </DialogHeader>
-      <div className="grid gap-4 py-4">
-        <div className="grid grid-cols-4 items-center gap-4">
-          <Label htmlFor="provider-input" className="text-right">
-            Provider
-          </Label>
 
-          <Select
-            value={provider}
-            onValueChange={(value) => {
-              setProvider(value);
-              const demo = officialDemos.find((demo) => demo.name === value);
-              if (demo) {
-                setUrl(demo.url);
-                setRoom(demo.room);
-                return;
-              }
-            }}
-          >
-            <SelectTrigger className="col-span-3">
-              <SelectValue placeholder="Select a provider" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectLabel>Official Demos</SelectLabel>
-                {
-                  // Ad-hoc remove the blocksuite playground from the official demos
-                  officialDemos
+      <div className="flex gap-6 h-[600px]">
+        {/* Sidebar - Configuration */}
+        <div className="w-80 flex flex-col gap-4">
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium">Provider Type</Label>
+              <Select
+                value={provider}
+                onValueChange={(value) => {
+                  setProvider(value);
+                  const demo = officialDemos.find((demo) => demo.name === value);
+                  if (demo) {
+                    setUrl(demo.url);
+                    setRoom(demo.room);
+                    return;
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="document-manager">
+                    📁 Document Manager (instrumenta.cf)
+                  </SelectItem>
+                  <SelectItem value="y-websocket">🔗 Custom WebSocket</SelectItem>
+                  <SelectItem value="y-webrtc" disabled>
+                    📡 WebRTC (coming soon)
+                  </SelectItem>
+                  {officialDemos
                     .filter((i) => i.name !== BLOCKSUITE_NAME)
                     .map((demo) => (
                       <SelectItem key={demo.name} value={demo.name}>
                         {demo.name}
                       </SelectItem>
-                    ))
-                }
-              </SelectGroup>
+                    ))}
+                  <SelectItem value={BLOCKSUITE_NAME}>
+                    {BLOCKSUITE_NAME}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-              <SelectGroup>
-                <SelectLabel>Customs</SelectLabel>
-                <SelectItem value="y-websocket">y-websocket</SelectItem>
-                <SelectItem value="y-webrtc" disabled>
-                  y-webrtc (coming soon)
-                </SelectItem>
-                <SelectItem value={BLOCKSUITE_NAME}>
-                  {BLOCKSUITE_NAME}
-                </SelectItem>
-                <SelectItem value="liveblocks" disabled>
-                  LiveblocksProvider (coming soon)
-                </SelectItem>
-                <SelectItem value="hocuspocus" disabled>
-                  HocuspocusProvider (coming soon)
-                </SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+            {provider === "document-manager" ? (
+              <>
+                <div>
+                  <Label htmlFor="dm-base-url" className="text-sm font-medium">
+                    Base URL
+                  </Label>
+                  <Input
+                    id="dm-base-url"
+                    value={config.documentManager.baseUrl}
+                    onInput={(e) =>
+                      setConfig({
+                        ...config,
+                        documentManager: {
+                          ...config.documentManager,
+                          baseUrl: e.currentTarget.value,
+                        },
+                      })
+                    }
+                    placeholder="https://instrumenta.cf"
+                    className="mt-1"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="dm-api-key" className="text-sm font-medium">
+                    API Key
+                  </Label>
+                  <Input
+                    id="dm-api-key"
+                    type="password"
+                    value={config.documentManager.apiKey}
+                    onInput={(e) =>
+                      setConfig({
+                        ...config,
+                        documentManager: {
+                          ...config.documentManager,
+                          apiKey: e.currentTarget.value,
+                        },
+                      })
+                    }
+                    placeholder="Optional API key"
+                    className="mt-1"
+                  />
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="dm-admin-mode"
+                    checked={config.documentManager.adminMode}
+                    onCheckedChange={(checked) =>
+                      setConfig({
+                        ...config,
+                        documentManager: {
+                          ...config.documentManager,
+                          adminMode: checked,
+                        },
+                      })
+                    }
+                  />
+                  <Label htmlFor="dm-admin-mode" className="text-sm font-medium">
+                    Admin Mode
+                  </Label>
+                </div>
+                <p className="text-xs text-gray-600">
+                  Show all documents from all users
+                </p>
+              </>
+            ) : (
+              <>
+                <div>
+                  <Label htmlFor="url-input" className="text-sm font-medium">
+                    WebSocket URL
+                  </Label>
+                  <Input
+                    id="url-input"
+                    value={url}
+                    disabled={!!officialDemo}
+                    onInput={(e) => setUrl(e.currentTarget.value)}
+                    placeholder="wss://demos.yjs.dev/ws"
+                    className="mt-1"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="room-input" className="text-sm font-medium">
+                    Room Name
+                  </Label>
+                  <Input
+                    id="room-input"
+                    className="mt-1"
+                    disabled={!!officialDemo && !officialDemo.custom}
+                    value={room}
+                    onInput={(e) => setRoom(e.currentTarget.value)}
+                    placeholder="Please enter a room name"
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="border-t pt-4">
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="create-new-doc"
+                  checked={needCreateNewDoc}
+                  onCheckedChange={(value) => setNeedCreateNewDoc(value)}
+                />
+                <Label htmlFor="create-new-doc" className="text-sm font-medium">
+                  Create New Document
+                </Label>
+              </div>
+              <p className="text-xs text-gray-600 mt-1">
+                Create a fresh YDoc instead of using existing one
+              </p>
+            </div>
+
+            {!needCreateNewDoc && (
+              <Alert variant="destructive" className="text-xs">
+                <TriangleAlert className="h-3 w-3" />
+                <AlertDescription>
+                  This may contaminate the remote YDoc
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {officialDemo && (
+              <Alert className="text-xs">
+                <RocketIcon className="h-3 w-3" />
+                <AlertDescription>
+                  <a
+                    className="text-primary underline"
+                    href={officialDemo.demoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Try the {officialDemo.name} demo
+                  </a>
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
         </div>
 
-        <div className="grid grid-cols-4 items-center gap-4">
-          <Label htmlFor="url-input" className="text-right">
-            URL
-          </Label>
-          <Input
-            id="url-input"
-            value={url}
-            disabled={!!officialDemo}
-            onInput={(e) => setUrl(e.currentTarget.value)}
-            placeholder="wss://demos.yjs.dev/ws"
-            className="col-span-3"
-          />
+        {/* Main Content - Document Browser */}
+        <div className="flex-1 border-l pl-6">
+          {provider === "document-manager" ? (
+            <DocumentBrowser
+              config={config.documentManager}
+              onSelectDocument={handleSelectDocument}
+              onCreateDocument={handleCreateDocument}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-center">
+              <div className="max-w-md">
+                <h3 className="text-lg font-medium mb-2">
+                  {provider === "y-websocket"
+                    ? "Custom WebSocket Connection"
+                    : provider === "y-webrtc"
+                      ? "WebRTC Connection (Coming Soon)"
+                      : officialDemo?.name || "Custom Connection"}
+                </h3>
+                <p className="text-gray-600 mb-6">
+                  Configure your connection settings in the sidebar and click
+                  connect below.
+                </p>
+
+                <div className="space-y-4">
+                  <Button
+                    disabled={!url || !room}
+                    onClick={async () => {
+                      const doc = needCreateNewDoc
+                        ? new Y.Doc(
+                            provider === BLOCKSUITE_NAME
+                              ? { guid: BLOCKSUITE_PLAYGROUND_DOC_GUID }
+                              : undefined,
+                          )
+                        : yDoc;
+                      setYDoc(doc);
+
+                      if (provider === BLOCKSUITE_NAME) {
+                        const ws = new WebSocket(
+                          new URL(`/room/${room}`, url),
+                        );
+                        await new Promise((resolve, reject) => {
+                          ws.addEventListener("open", resolve);
+                          ws.addEventListener("error", reject);
+                        });
+                        const connectProvider =
+                          new BlocksuiteWebsocketProvider(ws, doc);
+                        onConnect(connectProvider);
+                        return;
+                      }
+
+                      const connectProvider = new WebSocketConnectProvider(
+                        url,
+                        room,
+                        doc,
+                      );
+
+                      onConnect(connectProvider);
+                    }}
+                    className="w-full"
+                  >
+                    Connect
+                  </Button>
+
+                  {officialDemo && (
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        window.open(officialDemo.demoUrl, "_blank")
+                      }
+                      className="w-full"
+                    >
+                      Try Demo
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-
-        <div className="grid grid-cols-4 items-center gap-4">
-          <Label htmlFor="room-input" className="text-right">
-            Room
-          </Label>
-          <Input
-            id="room-input"
-            className="col-span-3"
-            disabled={!!officialDemo && !officialDemo.custom}
-            value={room}
-            onInput={(e) => setRoom(e.currentTarget.value)}
-            placeholder="Please enter a room name"
-          />
-        </div>
-
-        <div className="grid grid-cols-4 items-center gap-4">
-          <Switch
-            id="create-new-doc"
-            className="justify-self-end"
-            checked={needCreateNewDoc}
-            onCheckedChange={(value) => setNeedCreateNewDoc(value)}
-          />
-          <Label htmlFor="create-new-doc" className="col-span-3">
-            Create a new YDoc before connecting
-          </Label>
-        </div>
-
-        {!needCreateNewDoc && (
-          <Alert variant="destructive">
-            <TriangleAlert className="h-4 w-4" />
-            <AlertTitle>Caution!</AlertTitle>
-            <AlertDescription>
-              This may contaminate the remote YDoc. Make sure you know what you
-              are doing.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {officialDemo && (
-          <Alert>
-            <RocketIcon className="h-4 w-4" />
-            <AlertTitle>Heads up!</AlertTitle>
-            <AlertDescription>
-              Click here to access the&nbsp;
-              <a
-                className="text-primary underline"
-                href={officialDemo.demoUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {officialDemo.name}
-              </a>
-              &nbsp;demo.
-            </AlertDescription>
-          </Alert>
-        )}
       </div>
-      <DialogFooter>
-        <Button
-          disabled={!url || !room}
-          onClick={async () => {
-            const doc = needCreateNewDoc
-              ? new Y.Doc(
-                  provider === BLOCKSUITE_NAME
-                    ? { guid: BLOCKSUITE_PLAYGROUND_DOC_GUID }
-                    : undefined,
-                )
-              : yDoc;
-            setYDoc(doc);
-            if (provider === BLOCKSUITE_NAME) {
-              const ws = new WebSocket(new URL(`/room/${room}`, url));
-              // Fix Uncaught (in promise) DOMException: Failed to execute 'send' on 'WebSocket': Still in CONNECTING state.
-              await new Promise((resolve, reject) => {
-                ws.addEventListener("open", resolve);
-                ws.addEventListener("error", reject);
-              });
-              const connectProvider = new BlocksuiteWebsocketProvider(ws, doc);
-              onConnect(connectProvider);
-              return;
-            }
-
-            const connectProvider = new WebSocketConnectProvider(
-              url,
-              room,
-              doc,
-            );
-
-            onConnect(connectProvider);
-          }}
-        >
-          Connect
-        </Button>
-      </DialogFooter>
     </DialogContent>
   );
 }
