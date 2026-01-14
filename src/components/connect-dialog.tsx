@@ -89,7 +89,7 @@ export function ConnectDialog({
   const [config, setConfig] = useConfig();
   const [url, setUrl] = useState("wss://demos.yjs.dev/ws");
   const [room, setRoom] = useState(() => createDailyRoom("quill-demo"));
-  const [provider, setProvider] = useState("Quill");
+  const [provider, setProvider] = useState("document-manager");
   const [needCreateNewDoc, setNeedCreateNewDoc] = useState(true);
 
   const officialDemo = officialDemos.find((demo) => demo.name === provider);
