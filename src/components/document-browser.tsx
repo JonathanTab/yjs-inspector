@@ -20,7 +20,7 @@ import {
 
 interface DocumentBrowserProps {
   config: DocumentManagerConfig;
-  onSelectDocument: (room: string) => void;
+  onSelectDocument: (id: string, version: string) => void;
   onCreateDocument: () => void;
 }
 
@@ -33,6 +33,7 @@ export function DocumentBrowser({
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [toolFilter, setToolFilter] = useState<string>("");
+  const [selectedVersions, setSelectedVersions] = useState<Record<string, string>>({});
   const { toast } = useToast();
 
   // Memoize the API client to prevent recreation on every render
@@ -43,6 +44,14 @@ export function DocumentBrowser({
       setLoading(true);
       const docs = await api.listDocuments(config.adminMode ?? false);
       setDocuments(docs);
+      
+      // Initialize selected versions to latest for each document
+      const latestVersions: Record<string, string> = {};
+      docs.forEach((doc) => {
+        const versions = Object.keys(doc.versions).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+        latestVersions[doc.id] = versions[0] || "1";
+      });
+      setSelectedVersions(latestVersions);
     } catch (error) {
       console.error("Failed to load documents:", error);
       toast({
@@ -62,7 +71,7 @@ export function DocumentBrowser({
   const filteredDocuments = documents.filter((doc) => {
     const matchesSearch =
       doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      doc.room.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      doc.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       doc.owner.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesTool = !toolFilter || doc.tool === toolFilter;
     return matchesSearch && matchesTool;
@@ -77,11 +86,15 @@ export function DocumentBrowser({
     setToolFilter(value === "all-tools" ? "" : value);
   };
 
-  const handleDeleteDocument = async (room: string) => {
+  const handleVersionChange = (docId: string, version: string) => {
+    setSelectedVersions((prev) => ({ ...prev, [docId]: version }));
+  };
+
+  const handleDeleteDocument = async (id: string) => {
     if (!api) return;
 
     try {
-      await api.deleteDocument(room);
+      await api.deleteDocument(id);
       toast({
         title: "Success",
         description: "Document deleted successfully",
@@ -95,6 +108,11 @@ export function DocumentBrowser({
         description: "Failed to delete document",
       });
     }
+  };
+
+  // Get sorted versions for a document (newest first)
+  const getSortedVersions = (versions: Record<string, string>) => {
+    return Object.keys(versions).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
   };
 
   return (
@@ -158,67 +176,96 @@ export function DocumentBrowser({
           </div>
         ) : (
           <div className="grid gap-3">
-            {filteredDocuments.map((doc) => (
-              <div
-                key={doc.room}
-                className="border rounded-lg p-4 bg-white hover:shadow-sm transition-shadow dark:bg-gray-800"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-lg truncate">{doc.title}</h3>
-                    <p className="text-sm text-muted-foreground">Room: {doc.room}</p>
-                    <p className="text-sm text-muted-foreground">Owner: {doc.owner}</p>
-                    {doc.tool && (
-                      <Badge variant="secondary" className="mt-1">
-                        {doc.tool}
-                      </Badge>
-                    )}
-
-                    {doc.shared_with.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {doc.shared_with.slice(0, 3).map((shared) => (
-                          <Badge key={shared.username} variant="outline" className="text-xs">
-                            <User className="h-3 w-3 mr-1" />
-                            {shared.username}
-                            {shared.permissions.includes("write") ? " (RW)" : " (R)"}
-                          </Badge>
-                        ))}
-                        {doc.shared_with.length > 3 && (
-                          <Badge variant="outline" className="text-xs">
-                            +{doc.shared_with.length - 3} more
+            {filteredDocuments.map((doc) => {
+              const versions = getSortedVersions(doc.versions);
+              const selectedVersion = selectedVersions[doc.id] || versions[0];
+              
+              return (
+                <div
+                  key={doc.id}
+                  className="border rounded-lg p-4 bg-white hover:shadow-sm transition-shadow dark:bg-gray-800"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-lg truncate">{doc.title}</h3>
+                      <p className="text-sm text-muted-foreground">ID: {doc.id}</p>
+                      <p className="text-sm text-muted-foreground">Owner: {doc.owner}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        {doc.tool && (
+                          <Badge variant="secondary">
+                            {doc.tool}
                           </Badge>
                         )}
+                        <Badge variant="outline">
+                          v{selectedVersion}
+                        </Badge>
                       </div>
-                    )}
-                  </div>
 
-                  <div className="flex items-center gap-2 ml-4">
-                    <Button
-                      onClick={() => onSelectDocument(doc.room)}
-                      className="flex items-center gap-2"
-                    >
-                      Select
-                    </Button>
+                      {doc.shared_with.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {doc.shared_with.slice(0, 3).map((shared) => (
+                            <Badge key={shared.username} variant="outline" className="text-xs">
+                              <User className="h-3 w-3 mr-1" />
+                              {shared.username}
+                              {shared.permissions.includes("write") ? " (RW)" : " (R)"}
+                            </Badge>
+                          ))}
+                          {doc.shared_with.length > 3 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{doc.shared_with.length - 3} more
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
-                    {doc.shared_with.length > 0 && (
-                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                        <Share className="h-4 w-4" />
-                        <span>{doc.shared_with.length}</span>
+                    <div className="flex flex-col items-end gap-2 ml-4">
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={selectedVersion}
+                          onValueChange={(v) => handleVersionChange(doc.id, v)}
+                        >
+                          <SelectTrigger className="w-24">
+                            <SelectValue placeholder="Version" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {versions.map((version) => (
+                              <SelectItem key={version} value={version}>
+                                v{version}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          onClick={() => onSelectDocument(doc.id, selectedVersion)}
+                          className="flex items-center gap-2"
+                        >
+                          Select
+                        </Button>
                       </div>
-                    )}
+                      
+                      <div className="flex items-center gap-2">
+                        {doc.shared_with.length > 0 && (
+                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                            <Share className="h-4 w-4" />
+                            <span>{doc.shared_with.length}</span>
+                          </div>
+                        )}
 
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDeleteDocument(doc.room)}
-                      className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteDocument(doc.id)}
+                          className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
