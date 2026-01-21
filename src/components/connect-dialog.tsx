@@ -1,5 +1,6 @@
 import { BlocksuiteWebsocketProvider } from "@/providers/blocksuite/provider";
 import { WebSocketConnectProvider } from "@/providers/websocket";
+import { createDocumentManagerApi } from "@/lib/document-manager-api";
 import { RocketIcon, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import * as Y from "yjs";
@@ -99,7 +100,12 @@ export function ConnectDialog({
     console.log("Create document not implemented yet");
   };
 
-  const handleSelectDocument = (selectedRoom: string) => {
+  const handleSelectDocument = async (id: string, version: string) => {
+    // Use the document manager API to get the room for this version
+    const api = createDocumentManagerApi(config.documentManager);
+    const result = await api.getRoom(id, version);
+    const selectedRoom = result.room;
+
     // Use the same connection flow as custom WebSocket
     const doc = new Y.Doc();
     setYDoc(doc);
