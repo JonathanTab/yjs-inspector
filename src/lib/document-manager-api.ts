@@ -55,8 +55,13 @@ class DocumentManagerApi {
         return url.toString();
     }
 
-    private async request<T>(url: string): Promise<T> {
-        const response = await fetch(url);
+    private async request<T>(url: string, method: string = 'GET', body?: Record<string, string>): Promise<T> {
+        const options: RequestInit = { method };
+        if (method === 'POST' && body) {
+            options.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+            options.body = new URLSearchParams(body).toString();
+        }
+        const response = await fetch(url, options);
         const data = await response.json();
 
         if (data.error) {
@@ -66,6 +71,10 @@ class DocumentManagerApi {
         return data as T;
     }
 
+    private post<T>(url: string, body: Record<string, string>): Promise<T> {
+        return this.request<T>(url, 'POST', body);
+    }
+
     // CREATE DOCUMENT
     async createDocument(id: string, tool?: string, title?: string, version?: string): Promise<Document> {
         const params: Record<string, string> = { id };
@@ -73,7 +82,7 @@ class DocumentManagerApi {
         if (title) params.title = title;
         if (version) params.version = version;
 
-        return this.request<Document>(this.buildUrl("create", params));
+        return this.post<Document>(this.buildUrl("create"), params);
     }
 
     // LIST DOCUMENTS
@@ -94,23 +103,23 @@ class DocumentManagerApi {
 
     // RENAME DOCUMENT
     async renameDocument(id: string, title: string): Promise<Document> {
-        return this.request<Document>(this.buildUrl("rename", { id, title }));
+        return this.post<Document>(this.buildUrl("rename"), { id, title });
     }
 
     // SHARE DOCUMENT
     async shareDocument(id: string, username: string, permissions: string[]): Promise<Document> {
         const permissionsStr = permissions.join(",");
-        return this.request<Document>(this.buildUrl("share", { id, username, permissions: permissionsStr }));
+        return this.post<Document>(this.buildUrl("share"), { id, username, permissions: permissionsStr });
     }
 
     // REVOKE SHARE
     async revokeShare(id: string, username: string): Promise<Document> {
-        return this.request<Document>(this.buildUrl("revoke", { id, username }));
+        return this.post<Document>(this.buildUrl("revoke"), { id, username });
     }
 
     // DELETE DOCUMENT
     async deleteDocument(id: string): Promise<{ success: boolean }> {
-        return this.request<{ success: boolean }>(this.buildUrl("delete", { id }));
+        return this.post<{ success: boolean }>(this.buildUrl("delete"), { id });
     }
 
     // LIST DELETED DOCUMENTS
@@ -123,12 +132,12 @@ class DocumentManagerApi {
 
     // RESTORE DOCUMENT
     async restoreDocument(id: string): Promise<{ success: boolean }> {
-        return this.request<{ success: boolean }>(this.buildUrl("restore", { id }));
+        return this.post<{ success: boolean }>(this.buildUrl("restore"), { id });
     }
 
     // PERMANENTLY DELETE DOCUMENT
     async permanentDeleteDocument(id: string): Promise<{ success: boolean }> {
-        return this.request<{ success: boolean }>(this.buildUrl("permanent_delete", { id }));
+        return this.post<{ success: boolean }>(this.buildUrl("permanent_delete"), { id });
     }
 
     // CHECK ACCESS
