@@ -3,7 +3,7 @@
 export interface Document {
     id: string;
     owner: string;
-    tool: string;
+    app: string;
     title: string;
     versions: Record<string, string>; // version -> room mapping
     shared_with: {
@@ -111,6 +111,24 @@ class DocumentManagerApi {
     // DELETE DOCUMENT
     async deleteDocument(id: string): Promise<{ success: boolean }> {
         return this.request<{ success: boolean }>(this.buildUrl("delete", { id }));
+    }
+
+    // LIST DELETED DOCUMENTS
+    async listDeletedDocuments(all: boolean = false): Promise<Document[]> {
+        const params: Record<string, string> = { show_deleted: "1" };
+        if (all) params.all = "1";
+
+        return this.request<Document[]>(this.buildUrl("list", params));
+    }
+
+    // RESTORE DOCUMENT
+    async restoreDocument(id: string): Promise<{ success: boolean }> {
+        return this.request<{ success: boolean }>(this.buildUrl("restore", { id }));
+    }
+
+    // PERMANENTLY DELETE DOCUMENT
+    async permanentDeleteDocument(id: string): Promise<{ success: boolean }> {
+        return this.request<{ success: boolean }>(this.buildUrl("permanent_delete", { id }));
     }
 
     // CHECK ACCESS
