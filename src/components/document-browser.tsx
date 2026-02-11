@@ -1,11 +1,11 @@
-import { Plus, Search, Share, Trash2, RotateCcw, User, AlertTriangle } from "lucide-react";
+import { Plus, Search, Share, Trash2, RotateCcw, User, AlertTriangle, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import {
   Select,
-  SelectContent,  
+  SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -29,12 +29,14 @@ import {
 
 interface DocumentBrowserProps {
   config: DocumentManagerConfig;
+  onConfigChange: (config: DocumentManagerConfig) => void;
   onSelectDocument: (id: string, version: string) => void;
   onCreateDocument: () => void;
 }
 
 export function DocumentBrowser({
   config,
+  onConfigChange,
   onSelectDocument,
   onCreateDocument,
 }: DocumentBrowserProps) {
@@ -178,8 +180,47 @@ export function DocumentBrowser({
     );
   };
 
+  const [showConfig, setShowConfig] = useState(false);
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-200">
+      {/* Config Section - Collapsible */}
+      {showConfig && (
+        <div className="mb-6 p-4 border rounded-lg bg-muted/30">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="base-url" className="text-xs">
+                Base URL
+              </Label>
+              <Input
+                id="base-url"
+                value={config.baseUrl}
+                onInput={(e) =>
+                  onConfigChange({ ...config, baseUrl: e.currentTarget.value })
+                }
+                placeholder="https://instrumenta.cf"
+                className="mt-1 h-8"
+              />
+            </div>
+            <div>
+              <Label htmlFor="api-key" className="text-xs">
+                API Key
+              </Label>
+              <Input
+                id="api-key"
+                type="password"
+                value={config.apiKey}
+                onInput={(e) =>
+                  onConfigChange({ ...config, apiKey: e.currentTarget.value })
+                }
+                placeholder="Optional API key"
+                className="mt-1 h-8"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>
@@ -188,15 +229,47 @@ export function DocumentBrowser({
               Select a document to connect to
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Label htmlFor="show-deleted" className="text-sm">
-              Show deleted
-            </Label>
-            <Switch
-              id="show-deleted"
-              checked={showDeleted}
-              onCheckedChange={setShowDeleted}
-            />
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowConfig(!showConfig)}
+              className="text-muted-foreground"
+            >
+              {showConfig ? "Hide Config" : "Show Config"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={loadDocuments}
+              disabled={loading}
+              className="text-muted-foreground"
+            >
+              <RefreshCw className={`h-4 w-4 mr-1 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="admin-mode" className="text-sm">
+                Admin Mode
+              </Label>
+              <Switch
+                id="admin-mode"
+                checked={config.adminMode}
+                onCheckedChange={(checked) =>
+                  onConfigChange({ ...config, adminMode: checked })
+                }
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="show-deleted" className="text-sm">
+                Show deleted
+              </Label>
+              <Switch
+                id="show-deleted"
+                checked={showDeleted}
+                onCheckedChange={setShowDeleted}
+              />
+            </div>
           </div>
         </div>
       </div>
