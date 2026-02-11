@@ -147,9 +147,14 @@ class DocumentManagerApi {
         return this.request<DocumentAccess>(this.buildUrl("access", params));
     }
 
-    // GET ROOM FOR VERSION
+    // CREATE VERSION
+    async createVersion(id: string, version: string): Promise<Document> {
+        return this.post<Document>(this.buildUrl("create_version"), { id, version });
+    }
+
+    // GET ROOM FOR VERSION (uses 'access' action)
     async getRoom(id: string, version: string): Promise<DocumentRoomResult> {
-        return this.request<DocumentRoomResult>(this.buildUrl("get_room", { id, version }));
+        return this.request<DocumentRoomResult>(this.buildUrl("access", { id, version }));
     }
 
     // GENERATE ID

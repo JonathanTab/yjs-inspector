@@ -1,4 +1,4 @@
-import { Plus, Search, Share, Trash2, RotateCcw, User, AlertTriangle, RefreshCw } from "lucide-react";
+import { Plus, Search, Share, Trash2, RotateCcw, User, AlertTriangle, RefreshCw, GitBranch, SquarePen } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -180,6 +180,106 @@ export function DocumentBrowser({
     );
   };
 
+  // Rename functionality
+  const [renameDoc, setRenameDoc] = useState<Document | null>(null);
+  const [newTitle, setNewTitle] = useState("");
+
+  const handleRename = async () => {
+    if (!api || !renameDoc || !newTitle.trim()) return;
+
+    try {
+      await api.renameDocument(renameDoc.id, newTitle);
+      toast({
+        title: "Success",
+        description: "Document renamed successfully",
+      });
+      setRenameDoc(null);
+      setNewTitle("");
+      loadDocuments();
+    } catch (error) {
+      console.error("Failed to rename document:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to rename document",
+      });
+    }
+  };
+
+  // Share functionality
+  const [shareDoc, setShareDoc] = useState<Document | null>(null);
+  const [shareUsername, setShareUsername] = useState("");
+  const [sharePermissions, setSharePermissions] = useState<string[]>(["read"]);
+
+  const handleShare = async () => {
+    if (!api || !shareDoc || !shareUsername.trim()) return;
+
+    try {
+      await api.shareDocument(shareDoc.id, shareUsername, sharePermissions);
+      toast({
+        title: "Success",
+        description: `Document shared with ${shareUsername}`,
+      });
+      setShareDoc(null);
+      setShareUsername("");
+      setSharePermissions(["read"]);
+      loadDocuments();
+    } catch (error) {
+      console.error("Failed to share document:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to share document",
+      });
+    }
+  };
+
+  const handleRevokeShare = async (username: string) => {
+    if (!api || !shareDoc) return;
+
+    try {
+      await api.revokeShare(shareDoc.id, username);
+      toast({
+        title: "Success",
+        description: `Access revoked for ${username}`,
+      });
+      loadDocuments();
+    } catch (error) {
+      console.error("Failed to revoke share:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to revoke share",
+      });
+    }
+  };
+
+  // Create Version functionality
+  const [createVersionDoc, setCreateVersionDoc] = useState<Document | null>(null);
+  const [newVersion, setNewVersion] = useState("");
+
+  const handleCreateVersion = async () => {
+    if (!api || !createVersionDoc || !newVersion.trim()) return;
+
+    try {
+      await api.createVersion(createVersionDoc.id, newVersion);
+      toast({
+        title: "Success",
+        description: `Version ${newVersion} created successfully`,
+      });
+      setCreateVersionDoc(null);
+      setNewVersion("");
+      loadDocuments();
+    } catch (error) {
+      console.error("Failed to create version:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to create version",
+      });
+    }
+  };
+
   const [showConfig, setShowConfig] = useState(false);
 
   return (
@@ -290,7 +390,7 @@ export function DocumentBrowser({
         </div>
 
         <div className="w-48">
-          <Label htmlFor="tool-filter">Filter by App</Label>
+          <Label htmlFor="app-filter">Filter by App</Label>
           <Select
             value={appFilter || "all-apps"}
             onValueChange={handleAppFilterChange}
@@ -367,17 +467,29 @@ export function DocumentBrowser({
 
                       {(doc.shared_with || []).length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1">
-                          {(doc.shared_with || []).slice(0, 3).map((shared) => (
+                          {(doc.shared_with || []).map((shared) => (
                             <Badge
                               key={shared.username}
                               variant="outline"
-                              className="text-xs"
+                              className="text-xs flex items-center gap-1"
                             >
-                              <User className="h-3 w-3 mr-1" />
+                              <User className="h-3 w-3" />
                               {shared.username}
                               {shared.permissions.includes("write")
                                 ? " (RW)"
                                 : " (R)"}
+                              {!isDeleted && (
+                                <button
+                                  onClick={() => {
+                                    setShareDoc(doc);
+                                    handleRevokeShare(shared.username);
+                                  }}
+                                  className="ml-1 text-red-500 hover:text-red-700"
+                                  title="Revoke access"
+                                >
+                                  ×
+                                </button>
+                              )}
                             </Badge>
                           ))}
                           {(doc.shared_with || []).length > 3 && (
@@ -453,6 +565,36 @@ export function DocumentBrowser({
                             <Button
                               variant="outline"
                               size="sm"
+                              onClick={() => setCreateVersionDoc(doc)}
+                              title="Create new version"
+                            >
+                              <GitBranch className="h-4 w-4" />
+                            </Button>
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setShareDoc(doc)}
+                              title="Share document"
+                            >
+                              <Share className="h-4 w-4" />
+                            </Button>
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setRenameDoc(doc);
+                                setNewTitle(doc.title);
+                              }}
+                              title="Rename document"
+                            >
+                              <SquarePen className="h-4 w-4" />
+                            </Button>
+
+                            <Button
+                              variant="outline"
+                              size="sm"
                               onClick={() => handleDeleteDocument(doc.id)}
                               className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                             >
@@ -493,6 +635,135 @@ export function DocumentBrowser({
             </Button>
             <Button variant="destructive" onClick={handlePermanentDelete}>
               Permanently Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename Dialog */}
+      <Dialog open={!!renameDoc} onOpenChange={() => setRenameDoc(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Document</DialogTitle>
+            <DialogDescription>
+              Enter a new title for "{renameDoc?.title}"
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="new-title" className="text-sm">
+              New Title
+            </Label>
+            <Input
+              id="new-title"
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="Document Title"
+              className="mt-1"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameDoc(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleRename} disabled={!newTitle.trim()}>
+              Rename
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Share Dialog */}
+      <Dialog open={!!shareDoc} onOpenChange={() => setShareDoc(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Share Document</DialogTitle>
+            <DialogDescription>
+              Share "{shareDoc?.title}" with another user
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div>
+              <Label htmlFor="share-username" className="text-sm">
+                Username
+              </Label>
+              <Input
+                id="share-username"
+                value={shareUsername}
+                onChange={(e) => setShareUsername(e.target.value)}
+                placeholder="Username"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-sm">Permissions</Label>
+              <div className="flex gap-4 mt-1">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={sharePermissions.includes("read")}
+                    onChange={(e) => {
+                      const newPerms = e.target.checked
+                        ? [...sharePermissions, "read"]
+                        : sharePermissions.filter(p => p !== "read");
+                      setSharePermissions(newPerms);
+                    }}
+                  />
+                  Read
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={sharePermissions.includes("write")}
+                    onChange={(e) => {
+                      const newPerms = e.target.checked
+                        ? [...sharePermissions, "write"]
+                        : sharePermissions.filter(p => p !== "write");
+                      setSharePermissions(newPerms);
+                    }}
+                  />
+                  Write
+                </label>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShareDoc(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleShare} disabled={!shareUsername.trim()}>
+              Share
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Version Dialog */}
+      <Dialog open={!!createVersionDoc} onOpenChange={() => setCreateVersionDoc(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Version</DialogTitle>
+            <DialogDescription>
+              Create a new version of "{createVersionDoc?.title}"
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="new-version" className="text-sm">
+              Version Number
+            </Label>
+            <Input
+              id="new-version"
+              value={newVersion}
+              onChange={(e) => setNewVersion(e.target.value)}
+              placeholder="e.g., 2, 2.0, v2"
+              className="mt-1"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateVersionDoc(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateVersion} disabled={!newVersion.trim()}>
+              Create Version
             </Button>
           </DialogFooter>
         </DialogContent>
