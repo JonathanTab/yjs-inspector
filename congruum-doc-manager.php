@@ -87,6 +87,20 @@
  * 10. GENERATE ID
  *    Action: generate_id | Method: GET
  *    Params: length (1-128, default 16)
+ *
+ * 11. PERMANENTLY DELETE (Hard Delete)
+ *    Action: permanent_delete | Method: POST
+ *    Params: id (required)
+ *    Permissions: Owner or Admin only. Permanently removes document and all versions/shares.
+ *
+ * 12. RESTORE DOCUMENT
+ *    Action: restore | Method: POST
+ *    Params: id (required)
+ *    Permissions: Owner or Admin only. Restores soft-deleted document.
+ *
+ * LIST PARAMETERS
+ * ===============
+ * - show_deleted (1 to include deleted documents, 0/default for active documents)
  */
 
 define('DATA_ROOT', dirname(__DIR__) . '/data/congruum-docs/');
@@ -264,8 +278,8 @@ function generateRandomId($length = 16) {
     return $id;
 }
 
-function getDocumentFull($db, $docId) {
-    $stmt = $db->prepare("SELECT * FROM documents WHERE id = ? AND deleted = 0");
+function getDocumentFull($db, $docId, $includeDeleted = false) {
+    $stmt = $db->prepare("SELECT * FROM documents WHERE id = ?" . ($includeDeleted ? "" : " AND deleted = 0"));
     $stmt->execute([$docId]);
     $doc = $stmt->fetch();
     if (!$doc) return null;
@@ -350,14 +364,22 @@ switch ($action) {
         requireMethod('GET');
         $app = $params['app'] ?? null;
         $all = isset($params['all']) && $params['all'] == '1' && isAdmin($authorized_user);
+        $showDeleted = isset($params['show_deleted']) && $params['show_deleted'] == '1';
 
-        $query = "SELECT d.* FROM documents d WHERE d.deleted = 0";
+        // When showing deleted, only return docs owned by user or admin (for security)
+        $query = "SELECT d.* FROM documents d WHERE d.deleted = " . ($showDeleted ? '1' : '0');
         $sqlParams = [];
 
-        if (!$all) {
+        if (!$all && !$showDeleted) {
             $query .= " AND (d.owner = ? OR EXISTS (SELECT 1 FROM document_shares s WHERE s.document_id = d.id AND s.username = ? AND s.can_read = 1))";
             $sqlParams[] = $authorized_user;
             $sqlParams[] = $authorized_user;
+        } elseif ($showDeleted) {
+            // Only show deleted docs owned by the user or all if admin
+            if (!isAdmin($authorized_user)) {
+                $query .= " AND d.owner = ?";
+                $sqlParams[] = $authorized_user;
+            }
         }
 
         if ($app) {
@@ -370,9 +392,14 @@ switch ($action) {
         $docsList = $stmt->fetchAll();
 
         foreach ($docsList as &$d) {
-            $full = getDocumentFull($db, $d['id']);
-            $d['versions'] = $full['versions'];
-            $d['shared_with'] = $full['shared_with'];
+            $full = getDocumentFull($db, $d['id'], $showDeleted);
+            if ($full) {
+                $d['versions'] = $full['versions'];
+                $d['shared_with'] = $full['shared_with'];
+            } else {
+                $d['versions'] = [];
+                $d['shared_with'] = [];
+            }
         }
         echo json_encode(array_values($docsList));
         break;
@@ -524,6 +551,40 @@ switch ($action) {
         $length = isset($params['length']) ? intval($params['length']) : 16;
         if ($length < 1 || $length > 128) { http_response_code(400); die(json_encode(['error' => 'Invalid length (1–128 allowed)'])); }
         echo json_encode(['id' => generateRandomId($length)]);
+        break;
+
+    case 'permanent_delete':
+        requireMethod('POST');
+        if (!$docId) { http_response_code(400); die(json_encode(['error' => 'Missing id'])); }
+        
+        // Check if document exists and is deleted
+        $stmt = $db->prepare("SELECT owner FROM documents WHERE id = ? AND deleted = 1");
+        $stmt->execute([$docId]);
+        $owner = $stmt->fetchColumn();
+        if (!$owner) { http_response_code(404); die(json_encode(['error' => 'Document not found or not deleted'])); }
+        if ($owner !== $authorized_user && !isAdmin($authorized_user)) { http_response_code(403); die(json_encode(['error' => 'Access denied'])); }
+
+        // Delete the document and all related data (versions and shares via CASCADE)
+        $stmt = $db->prepare("DELETE FROM documents WHERE id = ?");
+        $stmt->execute([$docId]);
+        echo json_encode(['success' => true]);
+        break;
+
+    case 'restore':
+        requireMethod('POST');
+        if (!$docId) { http_response_code(400); die(json_encode(['error' => 'Missing id'])); }
+        
+        // Check if document exists and is deleted
+        $stmt = $db->prepare("SELECT owner FROM documents WHERE id = ? AND deleted = 1");
+        $stmt->execute([$docId]);
+        $owner = $stmt->fetchColumn();
+        if (!$owner) { http_response_code(404); die(json_encode(['error' => 'Document not found or not deleted'])); }
+        if ($owner !== $authorized_user && !isAdmin($authorized_user)) { http_response_code(403); die(json_encode(['error' => 'Access denied'])); }
+
+        // Restore the document
+        $stmt = $db->prepare("UPDATE documents SET deleted = 0, updated_at = ? WHERE id = ?");
+        $stmt->execute([time(), $docId]);
+        echo json_encode(['success' => true]);
         break;
 
     default:
