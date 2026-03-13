@@ -9,7 +9,10 @@ export type Config = {
   documentManager: {
     baseUrl: string;
     apiKey: string;
+    wsUrl: string;
+    blobStorageUrl: string;
     adminMode: boolean;
+    impersonateUser: string | null;
   };
 };
 const defaultConfig = {
@@ -18,9 +21,13 @@ const defaultConfig = {
   showSize: true,
   editable: false,
   documentManager: {
-    baseUrl: "https://instrumenta.cf",
-    apiKey: "",
-    adminMode: false,
+    // Backend API URLs - adjust these for your deployment
+    baseUrl: "",  // Empty = relative to current host (e.g., "" for same-origin)
+    apiKey: "",   // API key for authentication (via ?apikey= parameter)
+    wsUrl: "",    // WebSocket URL for Yjs sync (e.g., "wss://your-server/yjs")
+    blobStorageUrl: "",  // Blob storage base URL (leave empty for same-origin)
+    adminMode: true,  // Always true - admin mode is permanent
+    impersonateUser: null,
   },
 } satisfies Config;
 

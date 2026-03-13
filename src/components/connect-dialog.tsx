@@ -1,72 +1,56 @@
-import { createDocumentManagerApi } from "@/lib/document-manager-api";
-import * as Y from "yjs";
-import { useConfig, useYDoc } from "../state/index";
-import { DocumentBrowser } from "./document-browser";
+import * as Y from 'yjs';
+import { useConfig, useYDoc } from '../state/index';
+import { StorageBrowser } from './storage-browser';
 import {
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "./ui/dialog";
-import { WebSocketConnectProvider } from "@/providers/websocket";
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+} from './ui/dialog';
+import { WebSocketConnectProvider } from '@/providers/websocket';
+import type { FileDescriptor } from '@/types/storage';
 
 export function ConnectDialog({
-  onConnect,
+    onConnect,
 }: {
-  onConnect: (provider: WebSocketConnectProvider) => void;
+    onConnect: (provider: WebSocketConnectProvider, fileId: string) => void;
 }) {
-  const [, setYDoc] = useYDoc();
-  const [config, setConfig] = useConfig();
+    const [, setYDoc] = useYDoc();
+    const [config] = useConfig();
 
-  const handleSelectDocument = async (id: string, version: string) => {
-    // Use the document manager API to get the room for this version
-    const api = createDocumentManagerApi(config.documentManager);
-    const result = await api.getRoom(id, version);
-    const selectedRoom = result.room;
-
-    // Create WebSocket URL from base URL
-    const wsUrl = config.documentManager.baseUrl.replace(/^http/, "ws") + "/congruum/";
-
-    const doc = new Y.Doc();
-    setYDoc(doc);
-
-    const connectProvider = new WebSocketConnectProvider(
-      wsUrl,
-      selectedRoom,
-      doc,
-    );
-
-    onConnect(connectProvider);
-  };
-
-  const handleCreateDocument = () => {
-    // TODO: Implement create document dialog
-    console.log("Create document not implemented yet");
-  };
-
-  return (
-    <DialogContent className="max-w-7xl max-h-[90vh] overflow-hidden">
-      <DialogHeader>
-        <DialogTitle>Connect to Document</DialogTitle>
-        <DialogDescription>
-          Browse and connect to collaborative documents
-        </DialogDescription>
-      </DialogHeader>
-
-      <DocumentBrowser
-        config={config.documentManager}
-        onConfigChange={(newConfig) =>
-          setConfig({
-            ...config,
-            documentManager: {
-              ...config.documentManager,
-              ...newConfig,
-            },
-          })
+    const handleSelectFile = async (file: FileDescriptor) => {
+        // Only Yjs documents have rooms
+        if (file.type !== 'yjs' || !file.roomId) {
+            console.warn('Selected file is not a Yjs document or has no room ID');
+            return;
         }
-        onSelectDocument={handleSelectDocument}
-        onCreateDocument={handleCreateDocument}
-      />
-    </DialogContent>
-  );
+
+        const doc = new Y.Doc();
+        setYDoc(doc);
+
+        const connectProvider = new WebSocketConnectProvider(
+            config.documentManager.wsUrl,
+            file.roomId,
+            doc,
+        );
+
+        onConnect(connectProvider, file.id);
+    };
+
+    return (
+        <DialogContent className="max-w-7xl max-h-[90vh] overflow-hidden">
+            <DialogHeader>
+                <DialogTitle>Connect to Document</DialogTitle>
+                <DialogDescription>
+                    Browse and connect to collaborative documents
+                </DialogDescription>
+            </DialogHeader>
+
+            <div className="h-[60vh] overflow-hidden">
+                <StorageBrowser
+                    onSelectFile={handleSelectFile}
+                />
+            </div>
+        </DialogContent>
+    );
 }
