@@ -152,14 +152,22 @@ export class ServerApi {
 
     /**
      * Full sync - get all accessible files and folders.
-     * Admin users automatically get all files. Pass impersonateUser in config to see
-     * what a specific user would see. Pass includeDeleted to include soft-deleted files.
+     * 
+     * Behavior:
+     * - Regular users: see files they own, are shared with, or are public
+     * - Admin users: same as regular users UNLESS adminMode=true in config
+     * - Admin with adminMode=true: see ALL files (full admin visibility)
+     * - Impersonation: see exactly what that user would see (regardless of admin status)
      */
     async fullSync(opts: { includeDeleted?: boolean } = {}): Promise<FullSyncResult> {
         const params: Record<string, string> = {};
 
+        // Impersonation takes precedence - shows that user's normal view
         if (this.config.impersonateUser) {
             params.impersonate = this.config.impersonateUser;
+        } else if (this.config.adminMode) {
+            // Only request admin mode if explicitly enabled AND not impersonating
+            params.admin_mode = '1';
         }
         if (opts.includeDeleted) {
             params.include_deleted = '1';
@@ -617,16 +625,16 @@ export class ServerApi {
      */
     async adminUpdateFile(id: string, fields: AdminFileUpdate): Promise<FileDescriptor> {
         const body: Record<string, string | Blob | undefined> = { id };
-        if (fields.title !== undefined)       body.title        = fields.title;
-        if (fields.owner !== undefined)       body.owner        = fields.owner;
-        if (fields.type !== undefined)        body.type         = fields.type;
-        if (fields.scope !== undefined)       body.scope        = fields.scope;
-        if (fields.app !== undefined)         body.app          = fields.app ?? '';
-        if (fields.folder_id !== undefined)   body.folder_id    = fields.folder_id ?? '';
-        if (fields.parent_id !== undefined)   body.parent_id    = fields.parent_id ?? '';
-        if (fields.room_id !== undefined)     body.room_id      = fields.room_id ?? '';
-        if (fields.blob_key !== undefined)    body.blob_key     = fields.blob_key ?? '';
-        if (fields.public_read !== undefined) body.public_read  = fields.public_read  ? '1' : '0';
+        if (fields.title !== undefined) body.title = fields.title;
+        if (fields.owner !== undefined) body.owner = fields.owner;
+        if (fields.type !== undefined) body.type = fields.type;
+        if (fields.scope !== undefined) body.scope = fields.scope;
+        if (fields.app !== undefined) body.app = fields.app ?? '';
+        if (fields.folder_id !== undefined) body.folder_id = fields.folder_id ?? '';
+        if (fields.parent_id !== undefined) body.parent_id = fields.parent_id ?? '';
+        if (fields.room_id !== undefined) body.room_id = fields.room_id ?? '';
+        if (fields.blob_key !== undefined) body.blob_key = fields.blob_key ?? '';
+        if (fields.public_read !== undefined) body.public_read = fields.public_read ? '1' : '0';
         if (fields.public_write !== undefined) body.public_write = fields.public_write ? '1' : '0';
 
         const response = await this.post<Record<string, unknown>>(
@@ -640,9 +648,9 @@ export class ServerApi {
      */
     async adminUpdateFolder(folderId: string, fields: AdminFolderUpdate): Promise<Folder> {
         const body: Record<string, string | Blob | undefined> = { folder_id: folderId };
-        if (fields.name !== undefined)        body.name         = fields.name;
-        if (fields.owner !== undefined)       body.owner        = fields.owner;
-        if (fields.public_read !== undefined) body.public_read  = fields.public_read  ? '1' : '0';
+        if (fields.name !== undefined) body.name = fields.name;
+        if (fields.owner !== undefined) body.owner = fields.owner;
+        if (fields.public_read !== undefined) body.public_read = fields.public_read ? '1' : '0';
         if (fields.public_write !== undefined) body.public_write = fields.public_write ? '1' : '0';
 
         const response = await this.post<Record<string, unknown>>(

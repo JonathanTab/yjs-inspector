@@ -1,6 +1,5 @@
 import * as Y from "yjs";
 import { useState, useCallback, useEffect } from "react";
-import { ConfigPanel } from "./components/config-panel";
 import { Header } from "./components/site-header";
 import { ThemeProvider } from "./components/theme-provider";
 import { Toaster } from "./components/ui/toaster";
@@ -84,32 +83,37 @@ export function App() {
         }
     }, [connectionConfig.apiKey, files.length, sync]);
 
-    const handleSelectFile = useCallback(async (file: FileDescriptor) => {
+    const handleSelectFile = useCallback((file: FileDescriptor) => {
         setSelectedFile(file);
         setSelectedFolder(null);
+        // Don't auto-connect - user must explicitly connect via inspector panel
+    }, [setSelectedFile, setSelectedFolder]);
 
-        // If it's a Yjs document and we have connection config, connect to it
-        if (file.type === 'yjs' && connectionConfig.apiKey && file.roomId) {
-            try {
-                // Disconnect from previous document if any
-                if (provider) {
-                    provider.disconnect();
-                }
-                
-                const doc = new Y.Doc();
-                setYDoc(doc);
-
-                const newProvider = new WebSocketConnectProvider(
-                    connectionConfig.wsUrl,
-                    file.roomId,
-                    doc,
-                );
-                connect(newProvider, file.id);
-            } catch (error) {
-                console.error('Failed to connect to document:', error);
-            }
+    const handleConnectYjs = useCallback(async (file: FileDescriptor) => {
+        if (file.type !== 'yjs' || !connectionConfig.apiKey || !file.roomId) {
+            return;
         }
-    }, [setSelectedFile, setSelectedFolder, setYDoc, connectionConfig, connect, provider]);
+
+        try {
+            // Disconnect from previous document if any
+            if (provider) {
+                provider.disconnect();
+            }
+            
+            // Create a fresh Y.Doc for each connection to avoid contamination
+            const doc = new Y.Doc();
+            setYDoc(doc);
+
+            const newProvider = new WebSocketConnectProvider(
+                connectionConfig.wsUrl,
+                file.roomId,
+                doc,
+            );
+            connect(newProvider, file.id);
+        } catch (error) {
+            console.error('Failed to connect to document:', error);
+        }
+    }, [setYDoc, connectionConfig, connect, provider]);
 
     const handleSelectFolder = useCallback((folder: Folder) => {
         setSelectedFolder(folder);
@@ -208,10 +212,6 @@ export function App() {
                                     <AdminStats />
                                 </div>
                             )}
-                            
-                            <div className="border-t p-4">
-                                <ConfigPanel />
-                            </div>
                         </div>
                     )}
 
@@ -233,6 +233,8 @@ export function App() {
                                 folder={selectedFolder}
                                 yDoc={connectionState === 'connected' ? yDoc : null}
                                 connectionState={connectionState}
+                                onConnect={selectedFile ? () => handleConnectYjs(selectedFile) : undefined}
+                                onDisconnect={handleDisconnect}
                                 onUpdateFile={(updated) => {
                                     setFiles(files.map(f => f.id === updated.id ? updated : f));
                                     if (selectedFile?.id === updated.id) setSelectedFile(updated);

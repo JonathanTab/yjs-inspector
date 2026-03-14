@@ -347,30 +347,11 @@ $method = $_SERVER['REQUEST_METHOD'];
 $pathInfo = $_SERVER['PATH_INFO'] ?? '';
 $requestUri = $_SERVER['REQUEST_URI'] ?? '';
 
-// CORS helper for credentials support
-function setCorsHeaders() {
-    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-    $allowedOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-    if (in_array($origin, $allowedOrigins)) {
-        header('Access-Control-Allow-Origin: ' . $origin);
-        header('Access-Control-Allow-Credentials: true');
-    } else {
-        header('Access-Control-Allow-Origin: *');
-    }
-}
-
 // Handle CORS preflight requests
 if ($method === 'OPTIONS') {
-    setCorsHeaders();
-    header('Access-Control-Allow-Methods: GET, HEAD, POST, PUT, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type, Content-Disposition, Range, Authorization');
-    header('Access-Control-Max-Age: 86400');
     http_response_code(200);
     exit;
 }
-
-// Set CORS headers for all responses
-setCorsHeaders();
 
 // Extract document ID from path or query
 $docId = null;

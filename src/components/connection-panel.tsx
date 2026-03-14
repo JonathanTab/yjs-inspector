@@ -3,7 +3,8 @@ import { useConfig } from '@/state';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Check, X, User, Shield, XCircle } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Loader2, Check, X, User, Shield, XCircle, Eye } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
 interface ConnectionPanelProps {
@@ -73,7 +74,7 @@ export function ConnectionPanel({
                     <Label htmlFor="baseUrl">Server URL</Label>
                     <Input
                         id="baseUrl"
-                        value={config.documentManager.baseUrl}
+                        value={config.documentManager.baseUrl || ''}
                         onChange={(e) => updateConfig('baseUrl', e.target.value)}
                         placeholder="https://example.com"
                         disabled={isConnected}
@@ -86,7 +87,7 @@ export function ConnectionPanel({
                     <Input
                         id="apiKey"
                         type="password"
-                        value={config.documentManager.apiKey}
+                        value={config.documentManager.apiKey || ''}
                         onChange={(e) => updateConfig('apiKey', e.target.value)}
                         placeholder="Enter your API key"
                         disabled={isConnected}
@@ -98,7 +99,7 @@ export function ConnectionPanel({
                     <Label htmlFor="wsUrl">WebSocket URL</Label>
                     <Input
                         id="wsUrl"
-                        value={config.documentManager.wsUrl}
+                        value={config.documentManager.wsUrl || ''}
                         onChange={(e) => updateConfig('wsUrl', e.target.value)}
                         placeholder="wss://example.com/congruum/"
                         disabled={isConnected}
@@ -110,20 +111,43 @@ export function ConnectionPanel({
                     <Label htmlFor="blobStorageUrl">Blob Storage URL</Label>
                     <Input
                         id="blobStorageUrl"
-                        value={config.documentManager.blobStorageUrl}
+                        value={config.documentManager.blobStorageUrl || ''}
                         onChange={(e) => updateConfig('blobStorageUrl', e.target.value)}
                         placeholder="https://example.com/api"
                         disabled={isConnected}
                     />
                 </div>
 
-                {/* Admin Mode Badge - Always shown */}
-                <div className="flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-green-600" />
-                    <Badge variant="default" className="bg-green-600">
-                        Admin Mode - Always Active
-                    </Badge>
+                {/* Admin Mode Toggle */}
+                <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                            <Eye className="h-4 w-4" />
+                            <Label htmlFor="adminMode" className="text-sm font-medium">
+                                Show All Files (Admin Mode)
+                            </Label>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                            View all documents across all users
+                        </p>
+                    </div>
+                    <Switch
+                        id="adminMode"
+                        checked={config.documentManager.adminMode}
+                        onCheckedChange={(checked) => updateConfig('adminMode', checked)}
+                        disabled={isConnected}
+                    />
                 </div>
+
+                {/* Admin Mode Status */}
+                {config.documentManager.adminMode && (
+                    <div className="flex items-center gap-2">
+                        <Shield className="h-4 w-4 text-amber-600" />
+                        <Badge variant="outline" className="border-amber-600 text-amber-600">
+                            Admin Mode Active - Viewing All Files
+                        </Badge>
+                    </div>
+                )}
 
                 {/* Impersonate User */}
                 <div className="space-y-2">
@@ -134,6 +158,10 @@ export function ConnectionPanel({
                     <div className="flex gap-2">
                         <Input
                             id="impersonateUser"
+                            type="text"
+                            autoComplete="off"
+                            data-form-type="other"
+                            data-lpignore="true"
                             value={config.documentManager.impersonateUser || ''}
                             onChange={(e) =>
                                 updateConfig('impersonateUser', e.target.value || null)
@@ -154,7 +182,7 @@ export function ConnectionPanel({
                         )}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                        Leave empty to view all documents as admin
+                        View files as another user would see them
                     </p>
                 </div>
 

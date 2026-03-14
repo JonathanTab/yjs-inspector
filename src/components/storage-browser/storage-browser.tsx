@@ -72,6 +72,9 @@ export function StorageBrowser({ onSelectFile, onSelectFolder, connectedFileId, 
     // Get unique values for filters
     const uniqueOwners = getUniqueOwners(files);
 
+    // Track if we've already synced to prevent duplicate initial syncs
+    const hasSyncedRef = useRef(false);
+
     // Sync files and folders from server.
     // When showDeleted is active the backend returns deleted files too.
     const sync = useCallback(async (includeDeletedOverride?: boolean) => {
@@ -87,6 +90,7 @@ export function StorageBrowser({ onSelectFile, onSelectFolder, connectedFileId, 
             const result = await api.fullSync({ includeDeleted: wantDeleted });
             setFiles(result.documents);
             setFolders(result.folders);
+            hasSyncedRef.current = true;
             setSyncState({
                 isSyncing: false,
                 lastSyncTime: new Date(),
@@ -103,10 +107,10 @@ export function StorageBrowser({ onSelectFile, onSelectFolder, connectedFileId, 
 
     // Initial sync when connected
     useEffect(() => {
-        if (connectionConfig.apiKey && files.length === 0) {
+        if (connectionConfig.apiKey && !hasSyncedRef.current) {
             sync();
         }
-    }, [connectionConfig.apiKey, files.length, sync]);
+    }, [connectionConfig.apiKey, sync]);
 
     // Re-sync whenever showDeleted is toggled (deleted items come from the backend)
     const prevShowDeleted = useRef(showDeleted);
@@ -116,6 +120,18 @@ export function StorageBrowser({ onSelectFile, onSelectFolder, connectedFileId, 
             sync(showDeleted);
         }
     }, [showDeleted, connectionConfig.apiKey, sync]);
+
+    // Re-sync whenever impersonateUser changes (permissions are server-side)
+    const prevImpersonateUser = useRef(config.documentManager.impersonateUser);
+    useEffect(() => {
+        if (prevImpersonateUser.current !== config.documentManager.impersonateUser && connectionConfig.apiKey) {
+            prevImpersonateUser.current = config.documentManager.impersonateUser;
+            // Clear files to avoid showing stale data from previous user view
+            setFiles([]);
+            setFolders([]);
+            sync(showDeleted);
+        }
+    }, [config.documentManager.impersonateUser, connectionConfig.apiKey, sync, showDeleted, setFiles, setFolders]);
 
     // Set current user - use impersonateUser when impersonating
     useEffect(() => {
@@ -137,6 +153,15 @@ export function StorageBrowser({ onSelectFile, onSelectFolder, connectedFileId, 
         // Filter by deleted status
         if (!showDeleted) {
             filteredFiles = filteredFiles.filter((f) => !f.deleted);
+        }
+
+        // Filter by scope based on browser mode (following FileRegistry pattern)
+        // - 'tree' mode = drive scope (registry.drive)
+        // - 'list' mode = app scope (registry.app)
+        if (browserMode === 'tree') {
+            filteredFiles = filteredFiles.filter((f) => f.scope === 'drive');
+        } else if (browserMode === 'list') {
+            filteredFiles = filteredFiles.filter((f) => f.scope === 'app');
         }
 
         // Filter by folder if in drive/tree view

@@ -26,7 +26,7 @@ const defaultConfig = {
     apiKey: "",   // API key for authentication (via ?apikey= parameter)
     wsUrl: "",    // WebSocket URL for Yjs sync (e.g., "wss://your-server/yjs")
     blobStorageUrl: "",  // Blob storage base URL (leave empty for same-origin)
-    adminMode: true,  // Always true - admin mode is permanent
+    adminMode: false, // Toggle to see all files (admins only)
     impersonateUser: null,
   },
 } satisfies Config;

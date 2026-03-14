@@ -373,29 +373,10 @@ function removeFolderFromClosure(PDO $db, string $folderId): void {
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
-// CORS helper for credentials support
-function setCorsHeaders() {
-    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-    $allowedOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-    if (in_array($origin, $allowedOrigins)) {
-        header('Access-Control-Allow-Origin: ' . $origin);
-        header('Access-Control-Allow-Credentials: true');
-    } else {
-        header('Access-Control-Allow-Origin: *');
-    }
-}
-
 if ($method === 'OPTIONS') {
-    setCorsHeaders();
-    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type, Authorization');
-    header('Access-Control-Max-Age: 86400');
     http_response_code(200);
     exit;
 }
-
-// Set CORS headers for all responses
-setCorsHeaders();
 
 try {
     switch ($action) {
@@ -415,11 +396,15 @@ try {
 
             if ($isAdmin) {
                 $impersonate = trim($_GET['impersonate'] ?? '');
+                $adminMode   = !empty($_GET['admin_mode']); // explicit request to see all
+                
                 if ($impersonate && $impersonate !== $user) {
                     $viewAs = $impersonate; // show exactly what this user would see
-                } else {
-                    $adminAll = true; // no access filter — see everything
+                } elseif ($adminMode) {
+                    $adminAll = true; // explicit admin mode - see everything
                 }
+                // else: admin sees their normal user scope (no special treatment)
+                
                 $includeDeleted = !empty($_GET['include_deleted']);
             }
 
