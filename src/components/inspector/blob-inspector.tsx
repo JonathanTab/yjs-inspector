@@ -39,6 +39,7 @@ export function BlobInspector({ file }: BlobInspectorProps) {
     const [blobInfo, setBlobInfo] = useState<BlobInfo | null>(null);
     const [loading, setLoading] = useState(false);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [streamUrl, setStreamUrl] = useState<string | null>(null);
     const [textContent, setTextContent] = useState<string | null>(null);
     const [textLoading, setTextLoading] = useState(false);
     const [copied, setCopied] = useState(false);
@@ -53,8 +54,11 @@ export function BlobInspector({ file }: BlobInspectorProps) {
                 const info = await api.getBlobInfo(file.id);
                 setBlobInfo(info);
 
+                // Set stream URL for all blobs (used by Open button)
+                const url = api.getBlobStreamUrl(file.id);
+                setStreamUrl(url);
                 if (isPreviewable(file.mimeType)) {
-                    setPreviewUrl(api.getBlobUrl(file.id));
+                    setPreviewUrl(url);
                 }
             } catch (error) {
                 console.error('Failed to load blob info:', error);
@@ -302,8 +306,8 @@ export function BlobInspector({ file }: BlobInspectorProps) {
                     </label>
                 </Button>
 
-                {previewUrl && (
-                    <Button variant="ghost" onClick={() => window.open(previewUrl, '_blank')}>
+                {streamUrl && (
+                    <Button variant="ghost" onClick={() => window.open(streamUrl, '_blank')}>
                         <ExternalLink className="h-4 w-4 mr-2" />
                         Open
                     </Button>

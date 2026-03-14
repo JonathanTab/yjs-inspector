@@ -489,6 +489,13 @@ export class ServerApi {
     }
 
     /**
+     * Get blob stream URL (for inline display in browser)
+     */
+    getBlobStreamUrl(id: string): string {
+        return this.buildBlobUrl(id, 'stream');
+    }
+
+    /**
      * Upload blob content
      */
     async uploadBlob(id: string, file: File): Promise<void> {

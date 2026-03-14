@@ -548,7 +548,9 @@ try {
             header('Content-Length: ' . $length);
             // Use both filename and filename* for maximum compatibility
             $encodedFilename = rawurlencode($filename);
-            header("Content-Disposition: attachment; filename=\"$encodedFilename\"; filename*=UTF-8''$encodedFilename");
+            // Use 'inline' for stream action (allows browser to display), 'attachment' for download
+            $disposition = ($action === 'stream') ? 'inline' : 'attachment';
+            header("Content-Disposition: $disposition; filename=\"$encodedFilename\"; filename*=UTF-8''$encodedFilename");
             header('Accept-Ranges: bytes');
             header('Cache-Control: private, max-age=3600');
 
