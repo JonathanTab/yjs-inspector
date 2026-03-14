@@ -10,6 +10,8 @@ import type {
     CreateFileOptions,
     Permission,
     AdminStats,
+    AdminFileUpdate,
+    AdminFolderUpdate,
     User,
 } from '@/types/storage';
 
@@ -149,17 +151,32 @@ export class ServerApi {
     // ========================================
 
     /**
-     * Full sync - get all accessible files and folders
+     * Full sync - get all accessible files and folders.
+     * Admin users automatically get all files. Pass impersonateUser in config to see
+     * what a specific user would see. Pass includeDeleted to include soft-deleted files.
      */
-    async fullSync(): Promise<FullSyncResult> {
+    async fullSync(opts: { includeDeleted?: boolean } = {}): Promise<FullSyncResult> {
+        const params: Record<string, string> = {};
+
+        if (this.config.impersonateUser) {
+            params.impersonate = this.config.impersonateUser;
+        }
+        if (opts.includeDeleted) {
+            params.include_deleted = '1';
+        }
+
         const response = await this.request<{
             files: Record<string, unknown>[];
             folders: Record<string, unknown>[];
-        }>(this.buildStorageUrl('full_sync'));
+            viewAs?: string;
+            adminAll?: boolean;
+        }>(this.buildStorageUrl('full_sync', params));
 
         return {
             documents: response.files.map(f => this.normalizeFile(f)),
             folders: response.folders.map(f => this.normalizeFolder(f)),
+            viewAs: response.viewAs,
+            adminAll: response.adminAll,
         };
     }
 
@@ -585,27 +602,53 @@ export class ServerApi {
     }
 
     /**
-     * Get admin statistics (computed from sync data)
+     * Get admin statistics from the backend admin_stats endpoint.
      */
     async getAdminStats(): Promise<AdminStats> {
-        const result = await this.fullSync();
-        const files = result.documents;
+        return this.request<AdminStats>(this.buildStorageUrl('admin_stats'));
+    }
 
-        return {
-            totalDocuments: files.filter(f => !f.deleted).length,
-            totalFolders: result.folders.length,
-            totalBlobs: files.filter(f => f.type === 'blob' && !f.deleted).length,
-            totalSize: files.reduce((sum, f) => sum + (f.size ?? 0), 0),
-            documentsByType: {
-                yjs: files.filter(f => f.type === 'yjs' && !f.deleted).length,
-                blob: files.filter(f => f.type === 'blob' && !f.deleted).length,
-            },
-            documentsByScope: {
-                app: files.filter(f => f.scope === 'app' && !f.deleted).length,
-                drive: files.filter(f => f.scope === 'drive' && !f.deleted).length,
-            },
-            deletedDocuments: files.filter(f => f.deleted).length,
-        };
+    // ========================================
+    // Admin Operations
+    // ========================================
+
+    /**
+     * Admin-only: update any field on a file.
+     */
+    async adminUpdateFile(id: string, fields: AdminFileUpdate): Promise<FileDescriptor> {
+        const body: Record<string, string | Blob | undefined> = { id };
+        if (fields.title !== undefined)       body.title        = fields.title;
+        if (fields.owner !== undefined)       body.owner        = fields.owner;
+        if (fields.type !== undefined)        body.type         = fields.type;
+        if (fields.scope !== undefined)       body.scope        = fields.scope;
+        if (fields.app !== undefined)         body.app          = fields.app ?? '';
+        if (fields.folder_id !== undefined)   body.folder_id    = fields.folder_id ?? '';
+        if (fields.parent_id !== undefined)   body.parent_id    = fields.parent_id ?? '';
+        if (fields.room_id !== undefined)     body.room_id      = fields.room_id ?? '';
+        if (fields.blob_key !== undefined)    body.blob_key     = fields.blob_key ?? '';
+        if (fields.public_read !== undefined) body.public_read  = fields.public_read  ? '1' : '0';
+        if (fields.public_write !== undefined) body.public_write = fields.public_write ? '1' : '0';
+
+        const response = await this.post<Record<string, unknown>>(
+            this.buildStorageUrl('admin_update'), body
+        );
+        return this.normalizeFile(response);
+    }
+
+    /**
+     * Admin-only: update any field on a folder.
+     */
+    async adminUpdateFolder(folderId: string, fields: AdminFolderUpdate): Promise<Folder> {
+        const body: Record<string, string | Blob | undefined> = { folder_id: folderId };
+        if (fields.name !== undefined)        body.name         = fields.name;
+        if (fields.owner !== undefined)       body.owner        = fields.owner;
+        if (fields.public_read !== undefined) body.public_read  = fields.public_read  ? '1' : '0';
+        if (fields.public_write !== undefined) body.public_write = fields.public_write ? '1' : '0';
+
+        const response = await this.post<Record<string, unknown>>(
+            this.buildStorageUrl('admin_update_folder'), body
+        );
+        return this.normalizeFolder(response);
     }
 }
 

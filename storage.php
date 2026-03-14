@@ -373,14 +373,29 @@ function removeFolderFromClosure(PDO $db, string $folderId): void {
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
+// CORS helper for credentials support
+function setCorsHeaders() {
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    $allowedOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+    if (in_array($origin, $allowedOrigins)) {
+        header('Access-Control-Allow-Origin: ' . $origin);
+        header('Access-Control-Allow-Credentials: true');
+    } else {
+        header('Access-Control-Allow-Origin: *');
+    }
+}
+
 if ($method === 'OPTIONS') {
-    header('Access-Control-Allow-Origin: *');
+    setCorsHeaders();
     header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type, Authorization');
     header('Access-Control-Max-Age: 86400');
     http_response_code(200);
     exit;
 }
+
+// Set CORS headers for all responses
+setCorsHeaders();
 
 try {
     switch ($action) {
@@ -390,49 +405,99 @@ try {
         // ====================================================
 
         case 'full_sync': {
-            $user = requireAuth();
+            $user    = requireAuth();
+            $isAdmin = isAdmin($user);
 
-            // Files accessible to user: owned, directly shared, or in an accessible folder
-            $filesStmt = $db->prepare("
-                SELECT f.*, GROUP_CONCAT(fs.username || '|' || fs.can_read || '|' || fs.can_write, ',') as shares_raw
-                FROM files f
-                LEFT JOIN file_shares fs ON fs.file_id = f.id
-                WHERE f.deleted = 0 AND (
-                    f.owner = :user
-                    OR EXISTS (SELECT 1 FROM file_shares WHERE file_id = f.id AND username = :user AND can_read = 1)
-                    OR (f.folder_id IS NOT NULL AND (
-                        EXISTS (SELECT 1 FROM folders WHERE id = f.folder_id AND owner = :user)
+            // Admin mode options (only honoured for real admins)
+            $adminAll       = false;
+            $viewAs         = $user;
+            $includeDeleted = false;
+
+            if ($isAdmin) {
+                $impersonate = trim($_GET['impersonate'] ?? '');
+                if ($impersonate && $impersonate !== $user) {
+                    $viewAs = $impersonate; // show exactly what this user would see
+                } else {
+                    $adminAll = true; // no access filter — see everything
+                }
+                $includeDeleted = !empty($_GET['include_deleted']);
+            }
+
+            $deletedClause = $includeDeleted ? '' : 'AND f.deleted = 0';
+
+            if ($adminAll) {
+                // Admin all: every file regardless of ownership / sharing
+                $filesStmt = $db->prepare("
+                    SELECT f.*, GROUP_CONCAT(fs.username || '|' || fs.can_read || '|' || fs.can_write, ',') as shares_raw
+                    FROM files f
+                    LEFT JOIN file_shares fs ON fs.file_id = f.id
+                    WHERE 1=1 $deletedClause
+                    GROUP BY f.id
+                    ORDER BY f.updated_at DESC
+                ");
+                $filesStmt->execute();
+
+                $foldersStmt = $db->prepare("
+                    SELECT fol.*, GROUP_CONCAT(fs.username || '|' || fs.can_read || '|' || fs.can_write, ',') as shares_raw
+                    FROM folders fol
+                    LEFT JOIN folder_shares fs ON fs.folder_id = fol.id
+                    GROUP BY fol.id
+                    ORDER BY fol.updated_at DESC
+                ");
+                $foldersStmt->execute();
+            } else {
+                // Standard access-filtered query, evaluated for $viewAs
+                $filesStmt = $db->prepare("
+                    SELECT f.*, GROUP_CONCAT(fs.username || '|' || fs.can_read || '|' || fs.can_write, ',') as shares_raw
+                    FROM files f
+                    LEFT JOIN file_shares fs ON fs.file_id = f.id
+                    WHERE (1=1 $deletedClause) AND (
+                        f.owner = :user
+                        OR f.public_read = 1
+                        OR EXISTS (SELECT 1 FROM file_shares WHERE file_id = f.id AND username = :user AND can_read = 1)
+                        OR (f.folder_id IS NOT NULL AND (
+                            EXISTS (SELECT 1 FROM folders WHERE id = f.folder_id AND owner = :user)
+                            OR EXISTS (SELECT 1 FROM folders WHERE id = f.folder_id AND public_read = 1)
+                            OR EXISTS (
+                                SELECT 1 FROM folder_closure fc
+                                JOIN folder_shares fsh ON fsh.folder_id = fc.ancestor_id
+                                WHERE fc.descendant_id = f.folder_id AND fsh.username = :user AND fsh.can_read = 1
+                            )
+                        ))
+                    )
+                    GROUP BY f.id
+                    ORDER BY f.updated_at DESC
+                ");
+                $filesStmt->execute([':user' => $viewAs]);
+
+                $foldersStmt = $db->prepare("
+                    SELECT fol.*, GROUP_CONCAT(fs.username || '|' || fs.can_read || '|' || fs.can_write, ',') as shares_raw
+                    FROM folders fol
+                    LEFT JOIN folder_shares fs ON fs.folder_id = fol.id
+                    WHERE (
+                        fol.owner = :user
+                        OR fol.public_read = 1
                         OR EXISTS (
                             SELECT 1 FROM folder_closure fc
                             JOIN folder_shares fsh ON fsh.folder_id = fc.ancestor_id
-                            WHERE fc.descendant_id = f.folder_id AND fsh.username = :user AND fsh.can_read = 1
+                            WHERE fc.descendant_id = fol.id AND fsh.username = :user AND fsh.can_read = 1
                         )
-                    ))
-                )
-                GROUP BY f.id
-            ");
-            $filesStmt->execute([':user' => $user]);
-            $files = array_map('normalizeFile', $filesStmt->fetchAll());
-
-            // Folders: owned or accessible (direct or inherited share)
-            $foldersStmt = $db->prepare("
-                SELECT fol.*, GROUP_CONCAT(fs.username || '|' || fs.can_read || '|' || fs.can_write, ',') as shares_raw
-                FROM folders fol
-                LEFT JOIN folder_shares fs ON fs.folder_id = fol.id
-                WHERE (
-                    fol.owner = :user
-                    OR EXISTS (
-                        SELECT 1 FROM folder_closure fc
-                        JOIN folder_shares fsh ON fsh.folder_id = fc.ancestor_id
-                        WHERE fc.descendant_id = fol.id AND fsh.username = :user AND fsh.can_read = 1
                     )
-                )
-                GROUP BY fol.id
-            ");
-            $foldersStmt->execute([':user' => $user]);
+                    GROUP BY fol.id
+                    ORDER BY fol.updated_at DESC
+                ");
+                $foldersStmt->execute([':user' => $viewAs]);
+            }
+
+            $files   = array_map('normalizeFile',   $filesStmt->fetchAll());
             $folders = array_map('normalizeFolder', $foldersStmt->fetchAll());
 
-            respond(['files' => $files, 'folders' => $folders]);
+            respond([
+                'files'    => $files,
+                'folders'  => $folders,
+                'viewAs'   => $viewAs,
+                'adminAll' => $adminAll,
+            ]);
         }
 
         // ====================================================
@@ -792,17 +857,150 @@ try {
         // ====================================================
 
         case 'users': {
-            requireAuth();
-            $users  = instrumenta_get_users();
-            $result = [];
+            $user    = requireAuth();
+            $isAdmin = isAdmin($user);
+            $users   = instrumenta_get_users();
+            $result  = [];
             foreach ($users as $username => $data) {
-                $result[] = [
+                $entry = [
                     'username'    => $username,
                     'displayName' => $data['display_name'] ?? $username,
                     'isAdmin'     => !empty($data['is_admin']),
                 ];
+                if ($isAdmin) {
+                    $entry['invitedApps'] = $data['invited_apps'] ?? [];
+                    $entry['hasApiKey']   = !empty($data['api_key']);
+                }
+                $result[] = $entry;
             }
             respond($result);
+        }
+
+        // ====================================================
+        // ADMIN OPERATIONS
+        // ====================================================
+
+        case 'admin_stats': {
+            $user = requireAuth();
+            if (!isAdmin($user)) error('Admin required', 403);
+
+            $fileStats = $db->query("
+                SELECT
+                    COUNT(*) FILTER (WHERE deleted = 0)                    AS total_active,
+                    COUNT(*) FILTER (WHERE deleted = 1)                    AS total_deleted,
+                    COUNT(*) FILTER (WHERE type = 'yjs'  AND deleted = 0)  AS yjs_count,
+                    COUNT(*) FILTER (WHERE type = 'blob' AND deleted = 0)  AS blob_count,
+                    COUNT(*) FILTER (WHERE scope = 'drive' AND deleted = 0) AS drive_count,
+                    COUNT(*) FILTER (WHERE scope = 'app'  AND deleted = 0)  AS app_count,
+                    COALESCE(SUM(CASE WHEN deleted = 0 THEN COALESCE(size, 0) ELSE 0 END), 0) AS total_size,
+                    COUNT(DISTINCT owner) AS unique_owners
+                FROM files
+            ")->fetch();
+
+            $folderCount      = (int)$db->query("SELECT COUNT(*) FROM folders")->fetchColumn();
+            $shareCount       = (int)$db->query("SELECT COUNT(*) FROM file_shares")->fetchColumn();
+            $folderShareCount = (int)$db->query("SELECT COUNT(*) FROM folder_shares")->fetchColumn();
+
+            $allUsers = instrumenta_get_users();
+
+            respond([
+                'totalDocuments'   => (int)$fileStats['total_active'],
+                'totalDeleted'     => (int)$fileStats['total_deleted'],
+                'totalFolders'     => $folderCount,
+                'totalBlobs'       => (int)$fileStats['blob_count'],
+                'totalSize'        => (int)$fileStats['total_size'],
+                'documentsByType'  => [
+                    'yjs'  => (int)$fileStats['yjs_count'],
+                    'blob' => (int)$fileStats['blob_count'],
+                ],
+                'documentsByScope' => [
+                    'drive' => (int)$fileStats['drive_count'],
+                    'app'   => (int)$fileStats['app_count'],
+                ],
+                'deletedDocuments'  => (int)$fileStats['total_deleted'],
+                'uniqueOwners'      => (int)$fileStats['unique_owners'],
+                'totalShares'       => $shareCount,
+                'totalFolderShares' => $folderShareCount,
+                'totalUsers'        => count($allUsers),
+            ]);
+        }
+
+        case 'admin_update': {
+            requirePost();
+            $user = requireAuth();
+            if (!isAdmin($user)) error('Admin required', 403);
+
+            $id = post('id');
+            if (!$id) error('id required');
+
+            $stmt = $db->prepare("SELECT id FROM files WHERE id = ?");
+            $stmt->execute([$id]);
+            if (!$stmt->fetch()) error('File not found', 404);
+
+            $allowed = ['title', 'owner', 'type', 'scope', 'app', 'folder_id', 'parent_id', 'room_id', 'blob_key', 'public_read', 'public_write'];
+            $updates = [];
+            $params  = [];
+
+            foreach ($allowed as $field) {
+                if (!array_key_exists($field, $_POST)) continue;
+                if ($field === 'public_read' || $field === 'public_write') {
+                    $updates[] = "$field = ?";
+                    $params[]  = postBool($field);
+                } else {
+                    $val       = post($field);
+                    $updates[] = "$field = ?";
+                    $params[]  = ($val === '') ? null : $val;
+                }
+            }
+
+            if (empty($updates)) error('No fields to update');
+
+            $updates[] = "updated_at = datetime('now')";
+            $params[]  = $id;
+
+            $db->prepare("UPDATE files SET " . implode(', ', $updates) . " WHERE id = ?")
+               ->execute($params);
+
+            respond(fetchFile($db, $id));
+        }
+
+        case 'admin_update_folder': {
+            requirePost();
+            $user = requireAuth();
+            if (!isAdmin($user)) error('Admin required', 403);
+
+            $id = post('folder_id');
+            if (!$id) error('folder_id required');
+
+            $stmt = $db->prepare("SELECT id FROM folders WHERE id = ?");
+            $stmt->execute([$id]);
+            if (!$stmt->fetch()) error('Folder not found', 404);
+
+            $allowed = ['name', 'owner', 'public_read', 'public_write'];
+            $updates = [];
+            $params  = [];
+
+            foreach ($allowed as $field) {
+                if (!array_key_exists($field, $_POST)) continue;
+                if ($field === 'public_read' || $field === 'public_write') {
+                    $updates[] = "$field = ?";
+                    $params[]  = postBool($field);
+                } else {
+                    $val       = post($field);
+                    $updates[] = "$field = ?";
+                    $params[]  = ($val === '') ? null : $val;
+                }
+            }
+
+            if (empty($updates)) error('No fields to update');
+
+            $updates[] = "updated_at = datetime('now')";
+            $params[]  = $id;
+
+            $db->prepare("UPDATE folders SET " . implode(', ', $updates) . " WHERE id = ?")
+               ->execute($params);
+
+            respond(fetchFolder($db, $id));
         }
 
         default:

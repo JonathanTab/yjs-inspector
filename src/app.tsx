@@ -235,9 +235,15 @@ export function App() {
                                 connectionState={connectionState}
                                 onUpdateFile={(updated) => {
                                     setFiles(files.map(f => f.id === updated.id ? updated : f));
+                                    if (selectedFile?.id === updated.id) setSelectedFile(updated);
                                 }}
                                 onUpdateFolder={(updated) => {
                                     setFolders(folders.map(f => f.id === updated.id ? updated : f));
+                                    if (selectedFolder?.id === updated.id) setSelectedFolder(updated);
+                                }}
+                                onDeleteFile={(id) => {
+                                    setFiles(files.filter(f => f.id !== id));
+                                    if (selectedFile?.id === id) setSelectedFile(null);
                                 }}
                             />
                         </div>

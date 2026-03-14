@@ -18,6 +18,7 @@ interface InspectorPanelProps {
     connectionState?: 'disconnected' | 'connecting' | 'connected';
     onUpdateFile?: (file: FileDescriptor) => void;
     onUpdateFolder?: (folder: Folder) => void;
+    onDeleteFile?: (id: string) => void;
 }
 
 // Force re-render when YDoc updates
@@ -55,6 +56,7 @@ export function InspectorPanel({
     connectionState = 'disconnected',
     onUpdateFile,
     onUpdateFolder,
+    onDeleteFile,
 }: InspectorPanelProps) {
     const [activeTab, setActiveTab] = useState('metadata');
     const { resolvedTheme } = useTheme();
@@ -145,9 +147,16 @@ export function InspectorPanel({
                 <div className="flex-1 overflow-auto">
                     <TabsContent value="metadata" className="m-0">
                         {isFile ? (
-                            <MetadataInspector file={file!} onUpdate={onUpdateFile as ((item: FileDescriptor | Folder | undefined) => void) | undefined} />
+                            <MetadataInspector
+                                file={file!}
+                                onUpdate={onUpdateFile as ((item: FileDescriptor | Folder | undefined) => void) | undefined}
+                                onDelete={onDeleteFile}
+                            />
                         ) : (
-                            <MetadataInspector folder={folder!} onUpdate={onUpdateFolder as ((item: FileDescriptor | Folder | undefined) => void) | undefined} />
+                            <MetadataInspector
+                                folder={folder!}
+                                onUpdate={onUpdateFolder as ((item: FileDescriptor | Folder | undefined) => void) | undefined}
+                            />
                         )}
                     </TabsContent>
 

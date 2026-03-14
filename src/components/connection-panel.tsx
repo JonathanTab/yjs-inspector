@@ -26,12 +26,13 @@ export function ConnectionPanel({
         setTestResult(null);
 
         try {
-            const response = await fetch(
-                `${config.documentManager.baseUrl}/api/congruum-doc-manager.php?action=list&apikey=${config.documentManager.apiKey}&admin=1`,
-            );
+            const base = config.documentManager.baseUrl || '';
+            const key  = config.documentManager.apiKey;
+            const url  = `${base}/storage.php?action=users&apikey=${encodeURIComponent(key)}`;
+            const response = await fetch(url, { credentials: 'include' });
             const data = await response.json();
 
-            if (data.error) {
+            if (!response.ok || data.error) {
                 setTestResult('error');
             } else {
                 setTestResult('success');

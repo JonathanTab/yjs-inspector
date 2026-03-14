@@ -73,6 +73,8 @@ export interface ClassifiedFolder extends Folder {
 export interface FullSyncResult {
     documents: FileDescriptor[];
     folders: Folder[];
+    viewAs?: string;
+    adminAll?: boolean;
 }
 
 // Connection configuration
@@ -152,6 +154,34 @@ export interface AdminStats {
     documentsByType: { yjs: number; blob: number };
     documentsByScope: { app: number; drive: number };
     deletedDocuments: number;
+    // Extended fields from backend admin_stats endpoint
+    uniqueOwners?: number;
+    totalShares?: number;
+    totalFolderShares?: number;
+    totalUsers?: number;
+    totalDeleted?: number;
+}
+
+// Fields that can be updated via admin_update
+export interface AdminFileUpdate {
+    title?: string;
+    owner?: string;
+    type?: 'yjs' | 'blob';
+    scope?: 'drive' | 'app';
+    app?: string | null;
+    folder_id?: string | null;
+    parent_id?: string | null;
+    room_id?: string | null;
+    blob_key?: string | null;
+    public_read?: boolean;
+    public_write?: boolean;
+}
+
+export interface AdminFolderUpdate {
+    name?: string;
+    owner?: string;
+    public_read?: boolean;
+    public_write?: boolean;
 }
 
 export interface User {

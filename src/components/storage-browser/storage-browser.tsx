@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createServerApi } from '@/lib/server-api';
 import {
     useConnectionConfig,
@@ -72,17 +72,19 @@ export function StorageBrowser({ onSelectFile, onSelectFolder, connectedFileId, 
     // Get unique values for filters
     const uniqueOwners = getUniqueOwners(files);
 
-    // Sync files and folders from server
-    const sync = useCallback(async () => {
+    // Sync files and folders from server.
+    // When showDeleted is active the backend returns deleted files too.
+    const sync = useCallback(async (includeDeletedOverride?: boolean) => {
         if (!connectionConfig.apiKey) {
             return;
         }
 
         setSyncState((prev) => ({ ...prev, isSyncing: true, lastSyncError: null }));
 
+        const wantDeleted = includeDeletedOverride !== undefined ? includeDeletedOverride : showDeleted;
         try {
             const api = createServerApi(connectionConfig as ConnectionConfig);
-            const result = await api.fullSync();
+            const result = await api.fullSync({ includeDeleted: wantDeleted });
             setFiles(result.documents);
             setFolders(result.folders);
             setSyncState({
@@ -97,7 +99,7 @@ export function StorageBrowser({ onSelectFile, onSelectFolder, connectedFileId, 
                 lastSyncError: error instanceof Error ? error : new Error('Sync failed'),
             }));
         }
-    }, [connectionConfig, setFiles, setFolders, setSyncState]);
+    }, [connectionConfig, setFiles, setFolders, setSyncState, showDeleted]);
 
     // Initial sync when connected
     useEffect(() => {
@@ -105,6 +107,15 @@ export function StorageBrowser({ onSelectFile, onSelectFolder, connectedFileId, 
             sync();
         }
     }, [connectionConfig.apiKey, files.length, sync]);
+
+    // Re-sync whenever showDeleted is toggled (deleted items come from the backend)
+    const prevShowDeleted = useRef(showDeleted);
+    useEffect(() => {
+        if (prevShowDeleted.current !== showDeleted && connectionConfig.apiKey) {
+            prevShowDeleted.current = showDeleted;
+            sync(showDeleted);
+        }
+    }, [showDeleted, connectionConfig.apiKey, sync]);
 
     // Set current user - use impersonateUser when impersonating
     useEffect(() => {
