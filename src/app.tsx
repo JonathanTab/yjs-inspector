@@ -5,8 +5,9 @@ import { ThemeProvider } from "./components/theme-provider";
 import { Toaster } from "./components/ui/toaster";
 import { StorageBrowser } from "./components/storage-browser";
 import { InspectorPanel } from "./components/inspector";
-import { ConnectionPanel } from "./components/connection-panel";
 import { AdminStats } from "./components/admin";
+import { AdminOptions } from "./components/admin-options";
+import { SettingsPopover } from "./components/settings-popover";
 import { useSelectedFile, useSelectedFolder, useFiles, useFolders, useConnectionConfig, useConfig } from "./state";
 import { createServerApi } from "./lib/server-api";
 import { RotateCw, PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, Shield, User, Wifi, WifiOff } from "lucide-react";
@@ -89,31 +90,15 @@ export function App() {
         // Don't auto-connect - user must explicitly connect via inspector panel
     }, [setSelectedFile, setSelectedFolder]);
 
-    const handleConnectYjs = useCallback(async (file: FileDescriptor) => {
-        if (file.type !== 'yjs' || !connectionConfig.apiKey || !file.roomId) {
-            return;
+    // Handler for when InspectorPanel creates a new connection
+    const handleConnect = useCallback((newProvider: WebSocketConnectProvider, fileId: string) => {
+        // Disconnect from previous document if any
+        if (provider) {
+            provider.disconnect();
         }
-
-        try {
-            // Disconnect from previous document if any
-            if (provider) {
-                provider.disconnect();
-            }
-            
-            // Create a fresh Y.Doc for each connection to avoid contamination
-            const doc = new Y.Doc();
-            setYDoc(doc);
-
-            const newProvider = new WebSocketConnectProvider(
-                connectionConfig.wsUrl,
-                file.roomId,
-                doc,
-            );
-            connect(newProvider, file.id);
-        } catch (error) {
-            console.error('Failed to connect to document:', error);
-        }
-    }, [setYDoc, connectionConfig, connect, provider]);
+        
+        connect(newProvider, fileId);
+    }, [connect, provider]);
 
     const handleSelectFolder = useCallback((folder: Folder) => {
         setSelectedFolder(folder);
@@ -195,15 +180,15 @@ export function App() {
 
                 {/* Main content */}
                 <div className="flex flex-1 overflow-hidden">
-                    {/* Left panel - Connection, Admin Stats & Config */}
+                    {/* Left panel - Settings & Admin Stats */}
                     {showLeftPanel && (
                         <div className="w-80 border-r overflow-auto">
-                            <div className="p-4">
-                                <ConnectionPanel
-                                    onConnect={sync}
-                                    onDisconnect={handleDisconnect}
-                                    isConnected={connectionState === 'connected'}
-                                />
+                            <div className="p-4 space-y-4">
+                                {/* Settings Button */}
+                                <SettingsPopover />
+                                
+                                {/* Admin Options */}
+                                <AdminOptions />
                             </div>
                             
                             {/* Admin Stats - show when connected */}
@@ -233,7 +218,7 @@ export function App() {
                                 folder={selectedFolder}
                                 yDoc={connectionState === 'connected' ? yDoc : null}
                                 connectionState={connectionState}
-                                onConnect={selectedFile ? () => handleConnectYjs(selectedFile) : undefined}
+                                onConnect={handleConnect}
                                 onDisconnect={handleDisconnect}
                                 onUpdateFile={(updated) => {
                                     setFiles(files.map(f => f.id === updated.id ? updated : f));

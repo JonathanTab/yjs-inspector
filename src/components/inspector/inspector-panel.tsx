@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import * as Y from 'yjs';
 import type { FileDescriptor, Folder } from '@/types/storage';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -6,25 +6,71 @@ import { MetadataInspector } from './metadata-inspector';
 import { PermissionsInspector } from './permissions-inspector';
 import { VersionsInspector } from './versions-inspector';
 import { BlobInspector } from './blob-inspector';
-import { FileText, Lock, History, FileImage, Code, Wifi, WifiOff, Maximize2, Redo, Undo } from 'lucide-react';
+import { FileText, Lock, History, FileImage, Code, Wifi, WifiOff, Maximize2, Redo, Undo, Cable, RotateCw, Activity } from 'lucide-react';
 import { JsonViewerPanel } from '@/components/json-viewer-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useConfig, useUndoManager } from '@/state';
+import { useConfig, useUndoManager, useYDoc } from '@/state';
+import { WebSocketConnectProvider } from '@/providers/websocket';
 
 interface InspectorPanelProps {
     file: FileDescriptor | null;
     folder: Folder | null;
     yDoc?: Y.Doc | null;
     connectionState?: 'disconnected' | 'connecting' | 'connected';
-    onConnect?: () => void;
+    onConnect?: (provider: WebSocketConnectProvider, fileId: string) => void;
     onDisconnect?: () => void;
     onUpdateFile?: (file: FileDescriptor) => void;
     onUpdateFolder?: (folder: Folder) => void;
     onDeleteFile?: (id: string) => void;
+}
+
+// Track YDoc updates with a counter
+function useYDocUpdateCounter(yDoc: Y.Doc | null | undefined) {
+    const [updateCount, setUpdateCount] = useState(0);
+    const [isFlashing, setIsFlashing] = useState(false);
+    const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+        if (!yDoc) return;
+
+        const callback = () => {
+            setUpdateCount((count) => count + 1);
+            setIsFlashing(true);
+            
+            // Clear any existing timeout
+            if (flashTimeoutRef.current) {
+                clearTimeout(flashTimeoutRef.current);
+            }
+            
+            // Reset flash after 300ms
+            flashTimeoutRef.current = setTimeout(() => {
+                setIsFlashing(false);
+            }, 300);
+        };
+        
+        yDoc.on('update', callback);
+        yDoc.on('subdocs', ({ added }) => {
+            for (const subDoc of added) {
+                subDoc.on('update', callback);
+            }
+        });
+        
+        return () => {
+            yDoc.off('update', callback);
+            yDoc.off('subdocs', callback);
+            yDoc.subdocs.forEach((subDoc) => {
+                subDoc.off('update', callback);
+            });
+            if (flashTimeoutRef.current) {
+                clearTimeout(flashTimeoutRef.current);
+            }
+        };
+    }, [yDoc]);
+
+    return { updateCount, isFlashing };
 }
 
 // Force re-render when YDoc updates
@@ -67,19 +113,66 @@ export function InspectorPanel({
     onDeleteFile,
 }: InspectorPanelProps) {
     const [activeTab, setActiveTab] = useState('metadata');
-    const [isPopOutOpen, setIsPopOutOpen] = useState(false);
+    const [showViewer, setShowViewer] = useState(false);
     const [config, setConfig] = useConfig();
     const { undoManager, canRedo, canUndo, undoStackSize, redoStackSize } = useUndoManager();
+    const [, setYDoc] = useYDoc();
 
     // Force re-render when YDoc updates
     useYDocUpdates(yDoc);
+    
+    // Track updates for indicator
+    const { updateCount, isFlashing } = useYDocUpdateCounter(connectionState === 'connected' ? yDoc : null);
 
-    // Switch to content tab when connected
+    // Switch to content tab when connected and auto-show viewer
     useEffect(() => {
         if (connectionState === 'connected' && file?.type === 'yjs') {
             setActiveTab('content');
+            setShowViewer(true);
         }
     }, [connectionState, file?.type]);
+
+    // Close viewer when disconnected
+    useEffect(() => {
+        if (connectionState !== 'connected') {
+            setShowViewer(false);
+        }
+    }, [connectionState]);
+    
+    // Auto-connect when selecting a YJS file
+    const handleConnect = useCallback(async () => {
+        if (!config.documentManager.apiKey || !file?.roomId || !onConnect) {
+            return;
+        }
+
+        try {
+            const doc = new Y.Doc();
+            setYDoc(doc);
+
+            const provider = new WebSocketConnectProvider(
+                config.documentManager.wsUrl,
+                file.roomId,
+                doc,
+            );
+            onConnect(provider, file.id);
+        } catch (error) {
+            console.error('Failed to connect:', error);
+        }
+    }, [config.documentManager, file, setYDoc, onConnect]);
+    
+    // Handle disconnect - resets YDoc
+    const handleDisconnect = useCallback(() => {
+        if (onDisconnect) {
+            onDisconnect();
+        }
+        setYDoc(new Y.Doc());
+    }, [onDisconnect, setYDoc]);
+    
+    // Close viewer and disconnect when leaving the viewer
+    const handleCloseViewer = useCallback(() => {
+        setShowViewer(false);
+        handleDisconnect();
+    }, [handleDisconnect]);
 
     if (!file && !folder) {
         return (
@@ -96,53 +189,16 @@ export function InspectorPanel({
     const isFile = !!file;
     const isConnected = connectionState === 'connected';
 
-    const yjsSettingsContent = (
-        <div className="flex flex-col gap-3 p-3 border-b bg-muted/30">
-            {/* Connection Controls */}
-            <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">Connection</span>
-                <div className="flex items-center gap-2">
-                    {isConnected ? (
-                        <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={onDisconnect}
-                            className="h-7"
-                        >
-                            <WifiOff className="h-3 w-3 mr-1" />
-                            Disconnect
-                        </Button>
-                    ) : (
-                        <Button
-                            size="sm"
-                            variant="default"
-                            onClick={onConnect}
-                            disabled={connectionState === 'connecting'}
-                            className="h-7"
-                        >
-                            {connectionState === 'connecting' ? (
-                                <>
-                                    <Wifi className="h-3 w-3 mr-1 animate-pulse" />
-                                    Connecting...
-                                </>
-                            ) : (
-                                <>
-                                    <Wifi className="h-3 w-3 mr-1" />
-                                    Connect
-                                </>
-                            )}
-                        </Button>
-                    )}
-                </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">YJS Viewer Settings</span>
+    // YJS Viewer Settings Panel (used in overlay)
+    const yjsViewerSettings = (
+        <div className="flex items-center gap-4 p-3 border-b bg-muted/30">
+            <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-muted-foreground">Viewer Settings</span>
             </div>
             <div className="flex flex-wrap gap-3">
                 <div className="flex items-center space-x-2">
                     <Switch
-                        id="parse-y-doc-switch-inspector"
+                        id="parse-y-doc-switch"
                         checked={config.parseYDoc}
                         onCheckedChange={(checked) =>
                             setConfig({
@@ -151,12 +207,12 @@ export function InspectorPanel({
                             })
                         }
                     />
-                    <Label htmlFor="parse-y-doc-switch-inspector" className="text-xs">Parse</Label>
+                    <Label htmlFor="parse-y-doc-switch" className="text-xs">Parse</Label>
                 </div>
 
                 <div className="flex items-center space-x-2">
                     <Switch
-                        id="show-delta-inspector"
+                        id="show-delta"
                         checked={config.showDelta}
                         disabled={!config.parseYDoc}
                         onCheckedChange={(checked) =>
@@ -166,12 +222,12 @@ export function InspectorPanel({
                             })
                         }
                     />
-                    <Label htmlFor="show-delta-inspector" className="text-xs">Delta</Label>
+                    <Label htmlFor="show-delta" className="text-xs">Delta</Label>
                 </div>
 
                 <div className="flex items-center space-x-2">
                     <Switch
-                        id="show-size-inspector"
+                        id="show-size"
                         checked={config.showSize}
                         onCheckedChange={(checked) =>
                             setConfig({
@@ -180,12 +236,12 @@ export function InspectorPanel({
                             })
                         }
                     />
-                    <Label htmlFor="show-size-inspector" className="text-xs">Size</Label>
+                    <Label htmlFor="show-size" className="text-xs">Size</Label>
                 </div>
 
                 <div className="flex items-center space-x-2">
                     <Switch
-                        id="editable-switch-inspector"
+                        id="editable-switch"
                         disabled={!config.parseYDoc}
                         checked={config.editable}
                         onCheckedChange={(checked) =>
@@ -195,12 +251,12 @@ export function InspectorPanel({
                             })
                         }
                     />
-                    <Label htmlFor="editable-switch-inspector" className="text-xs">Edit</Label>
+                    <Label htmlFor="editable-switch" className="text-xs">Edit</Label>
                 </div>
             </div>
 
             {config.editable && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 ml-auto">
                     <Button
                         size="sm"
                         variant="outline"
@@ -258,15 +314,17 @@ export function InspectorPanel({
                                         Disconnected
                                     </Badge>
                                 )}
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-6 w-6"
-                                    onClick={() => setIsPopOutOpen(true)}
-                                    title="Pop out viewer"
-                                >
-                                    <Maximize2 className="h-3 w-3" />
-                                </Button>
+                                {isConnected && (
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6"
+                                        onClick={() => setShowViewer(true)}
+                                        title="Open viewer"
+                                    >
+                                        <Maximize2 className="h-3 w-3" />
+                                    </Button>
+                                )}
                             </>
                         )}
                     </div>
@@ -275,8 +333,54 @@ export function InspectorPanel({
                     </p>
                 </div>
 
-                {/* YJS Settings - show when viewing a YJS file */}
-                {isFile && file!.type === 'yjs' && yjsSettingsContent}
+                {/* Connection Controls - only for YJS files */}
+                {isFile && file!.type === 'yjs' && (
+                    <div className="flex items-center justify-between p-3 border-b bg-muted/30">
+                        <span className="text-xs font-medium text-muted-foreground">Connection</span>
+                        <div className="flex items-center gap-2">
+                            {connectionState === 'connecting' ? (
+                                <Button variant="secondary" size="sm" disabled className="gap-1">
+                                    <RotateCw className="h-3 w-3 animate-spin" />
+                                    Connecting...
+                                </Button>
+                            ) : isConnected ? (
+                                <>
+                                    {/* Update indicator */}
+                                    <div 
+                                        className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
+                                            isFlashing 
+                                                ? 'bg-green-500 text-white' 
+                                                : 'bg-muted text-muted-foreground'
+                                        }`}
+                                    >
+                                        <Activity className="h-3 w-3" />
+                                        <span>{updateCount} updates</span>
+                                    </div>
+                                    <Button 
+                                        variant="secondary" 
+                                        size="sm" 
+                                        onClick={handleDisconnect} 
+                                        className="gap-1"
+                                    >
+                                        <WifiOff className="h-3 w-3" />
+                                        Disconnect
+                                    </Button>
+                                </>
+                            ) : (
+                                <Button 
+                                    variant="default" 
+                                    size="sm" 
+                                    onClick={handleConnect}
+                                    disabled={!config.documentManager.apiKey || !file?.roomId}
+                                    className="gap-1"
+                                >
+                                    <Cable className="h-3 w-3" />
+                                    Connect
+                                </Button>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* Tabs */}
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
@@ -336,11 +440,21 @@ export function InspectorPanel({
                         {isFile && file!.type === 'yjs' && (
                             <TabsContent value="content" className="m-0">
                                 {isConnected && yDoc ? (
-                                    <JsonViewerPanel
-                                        value={yDoc}
-                                        yDoc={yDoc}
-                                        inspectDepth={2}
-                                    />
+                                    <div className="flex flex-col items-center justify-center h-48 text-muted-foreground p-4">
+                                        <Code className="h-8 w-8 mb-2 opacity-50" />
+                                        <p className="text-sm text-center">
+                                            Document content is displayed in the overlay viewer
+                                        </p>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="mt-2"
+                                            onClick={() => setShowViewer(true)}
+                                        >
+                                            <Maximize2 className="h-3 w-3 mr-1" />
+                                            Open Viewer
+                                        </Button>
+                                    </div>
                                 ) : (
                                     <div className="flex flex-col items-center justify-center h-48 text-muted-foreground p-4">
                                         <WifiOff className="h-8 w-8 mb-2 opacity-50" />
@@ -369,49 +483,55 @@ export function InspectorPanel({
                 </Tabs>
             </div>
 
-            {/* Pop-out Dialog */}
-            <Dialog open={isPopOutOpen} onOpenChange={setIsPopOutOpen}>
-                <DialogContent className="max-w-[90vw] max-h-[90vh] h-[90vh] flex flex-col">
-                    <DialogHeader className="flex-shrink-0">
-                        <DialogTitle className="flex items-center gap-2">
-                            {file?.title}
-                            {isConnected ? (
-                                <Badge className="bg-green-600 gap-1">
-                                    <Wifi className="h-3 w-3" />
-                                    Connected
-                                </Badge>
-                            ) : (
-                                <Badge variant="outline" className="gap-1">
-                                    <WifiOff className="h-3 w-3" />
-                                    Disconnected
-                                </Badge>
-                            )}
-                        </DialogTitle>
-                    </DialogHeader>
-                    
-                    {/* Settings in pop-out */}
-                    {yjsSettingsContent}
-                    
-                    <div className="flex-1 overflow-auto min-h-0">
-                        {isConnected && yDoc ? (
-                            <JsonViewerPanel
-                                value={yDoc}
-                                yDoc={yDoc}
-                                inspectDepth={3}
-                            />
-                        ) : (
-                            <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
-                                <WifiOff className="h-12 w-12 mb-4 opacity-50" />
-                                <p className="text-sm text-center">
-                                    {connectionState === 'connecting' 
-                                        ? 'Connecting to document...' 
-                                        : 'Click "Connect" above to view document content'}
-                                </p>
+            {/* Full-screen YJS Viewer Overlay */}
+            {showViewer && isConnected && yDoc && file?.type === 'yjs' && (
+                <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col">
+                    {/* Overlay Header */}
+                    <div className="flex items-center justify-between border-b px-4 py-2 bg-muted/50">
+                        <div className="flex items-center gap-3">
+                            <h3 className="text-sm font-semibold">{file.title}</h3>
+                            <Badge className="bg-green-600 gap-1">
+                                <Wifi className="h-3 w-3" />
+                                Connected
+                            </Badge>
+                            {/* Update indicator in overlay */}
+                            <div 
+                                className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors ${
+                                    isFlashing 
+                                        ? 'bg-green-500 text-white' 
+                                        : 'bg-muted text-muted-foreground'
+                                }`}
+                            >
+                                <Activity className="h-3 w-3" />
+                                <span>{updateCount} updates</span>
                             </div>
-                        )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={handleCloseViewer}
+                                className="gap-1"
+                            >
+                                <WifiOff className="h-3 w-3" />
+                                Disconnect & Close
+                            </Button>
+                        </div>
                     </div>
-                </DialogContent>
-            </Dialog>
+
+                    {/* Viewer Settings */}
+                    {yjsViewerSettings}
+
+                    {/* JSON Viewer */}
+                    <div className="flex-1 overflow-auto">
+                        <JsonViewerPanel
+                            value={yDoc}
+                            yDoc={yDoc}
+                            inspectDepth={3}
+                        />
+                    </div>
+                </div>
+            )}
         </>
     );
 }
