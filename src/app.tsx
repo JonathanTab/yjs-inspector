@@ -5,7 +5,7 @@ import { ThemeProvider } from "./components/theme-provider";
 import { Toaster } from "./components/ui/toaster";
 import { StorageBrowser } from "./components/storage-browser";
 import { InspectorPanel } from "./components/inspector";
-import { AdminStats } from "./components/admin";
+import { AdminStats, YjsServerStats } from "./components/admin";
 import { AdminOptions } from "./components/admin-options";
 import { SettingsPopover } from "./components/settings-popover";
 import { useSelectedFile, useSelectedFolder, useFiles, useFolders, useConnectionConfig, useConfig } from "./state";
@@ -195,6 +195,13 @@ export function App() {
                             {connectionConfig.apiKey && (
                                 <div className="border-t p-4">
                                     <AdminStats />
+                                </div>
+                            )}
+
+                            {/* Yjs server live stats - total connections, wire I/O, rooms */}
+                            {connectionConfig.apiKey && connectionConfig.wsUrl && (
+                                <div className="border-t p-4">
+                                    <YjsServerStats />
                                 </div>
                             )}
                         </div>

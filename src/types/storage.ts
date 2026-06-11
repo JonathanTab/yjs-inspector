@@ -184,6 +184,71 @@ export interface AdminFolderUpdate {
     public_write?: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Yjs server live stats (from the yjs-server HTTP API: /api/stats, /api/room/:id/stats)
+// ---------------------------------------------------------------------------
+
+// Per-room live metrics summary (one in-memory room on the yjs server)
+export interface YjsRoomSummary {
+    roomId: string;
+    fileId: string | null;
+    appType: string | null;
+    connections: number;            // current open WS connections to this room
+    users: string[];                // unique connected usernames
+    userCount: number;
+    awarenessStates: number;        // realtime presence entries
+    stateSize: number;              // in-memory logical state size (bytes)
+    wireBytesIn: number;            // bytes received over the wire for this room
+    wireBytesOut: number;           // bytes sent over the wire for this room
+    messagesIn: number;
+    messagesOut: number;
+    connectionsOpened: number;      // cumulative connections since the room loaded
+    createdAt: number;              // ms epoch the room loaded into memory
+    lastActivityAt: number;         // ms epoch of last inbound message
+}
+
+// Server-wide metrics block from GET /api/stats
+export interface YjsServerMetrics {
+    startedAt: number;
+    uptimeMs: number;
+    activeRooms: number;            // rooms currently loaded in memory
+    totalConnections: number;       // sum of open connections across all rooms
+    uniqueUsers: number;            // distinct connected usernames server-wide
+    wireBytesIn: number;
+    wireBytesOut: number;
+    messagesIn: number;
+    messagesOut: number;
+    connectionsOpened: number;      // cumulative since boot
+    connectionsClosed: number;      // cumulative since boot
+    onDiskDocCount: number | null;  // documents persisted in LevelDB
+    gcEnabled: boolean;
+}
+
+export interface YjsServerStats {
+    server: YjsServerMetrics;
+    rooms: YjsRoomSummary[];
+}
+
+// Optional scheduler debug info attached to a room-detail response
+export interface YjsSchedulerStats {
+    dirty: boolean;
+    sessionChanges: number;
+    userCount: number;
+    idleTimeout: string;
+    burstCap: string;
+    sessionLength: string;
+    timeSinceSnapshot: string;
+}
+
+// GET /api/room/:roomId/stats — per-document detail incl. persisted on-disk size
+export interface YjsRoomStats {
+    roomId: string;
+    loaded: boolean;                // whether the room is currently in memory
+    onDiskSize: number | null;      // persisted LevelDB size in bytes
+    live: YjsRoomSummary | null;    // live metrics (null if not loaded)
+    scheduler: YjsSchedulerStats | null;
+}
+
 export interface User {
     username: string;
     is_admin?: boolean;

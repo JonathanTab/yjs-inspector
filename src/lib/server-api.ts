@@ -13,6 +13,8 @@ import type {
     AdminFileUpdate,
     AdminFolderUpdate,
     User,
+    YjsServerStats,
+    YjsRoomStats,
 } from '@/types/storage';
 
 export class ServerApi {
@@ -49,6 +51,32 @@ export class ServerApi {
         if (this.config.apiKey) {
             url.searchParams.set('apikey', this.config.apiKey);
         }
+
+        return url.toString();
+    }
+
+    /**
+     * Build a URL for the yjs-server HTTP API.
+     *
+     * The yjs server exposes its REST API on the same origin/path prefix as the
+     * WebSocket endpoint, so we derive the HTTP base from `wsUrl`
+     * (ws:// → http://, wss:// → https://) and append the API path. The api key
+     * is passed via the `auth` query param (the yjs server reads `auth` / Bearer,
+     * not cookies, for HTTP requests).
+     */
+    private buildYjsUrl(path: string, params: Record<string, string> = {}): string {
+        const httpBase = this.config.wsUrl
+            .replace(/^wss:/i, 'https:')
+            .replace(/^ws:/i, 'http:')
+            .replace(/\/+$/, '');
+        const url = new URL(`${httpBase}${path}`);
+
+        if (this.config.apiKey) {
+            url.searchParams.set('auth', this.config.apiKey);
+        }
+        Object.entries(params).forEach(([key, value]) => {
+            url.searchParams.set(key, value);
+        });
 
         return url.toString();
     }
@@ -621,6 +649,29 @@ export class ServerApi {
      */
     async getAdminStats(): Promise<AdminStats> {
         return this.request<AdminStats>(this.buildStorageUrl('admin_stats'));
+    }
+
+    // ========================================
+    // Yjs Server Live Stats
+    // ========================================
+
+    /**
+     * Server-wide yjs metrics: total connection count, over-the-wire byte totals,
+     * active rooms, on-disk document count, plus a per-room live summary list.
+     */
+    async getYjsServerStats(): Promise<YjsServerStats> {
+        return this.request<YjsServerStats>(this.buildYjsUrl('/api/stats'));
+    }
+
+    /**
+     * Per-document yjs detail including the persisted on-disk size (LevelDB),
+     * live connection count, over-the-wire sizes, and realtime presence info.
+     * @param roomId The yjs room id (FileDescriptor.roomId)
+     */
+    async getYjsRoomStats(roomId: string): Promise<YjsRoomStats> {
+        return this.request<YjsRoomStats>(
+            this.buildYjsUrl(`/api/room/${encodeURIComponent(roomId)}/stats`)
+        );
     }
 
     // ========================================

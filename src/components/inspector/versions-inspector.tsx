@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Link, Wifi, Copy, Check, Loader2, Radio } from 'lucide-react';
 import { useConnectionConfig } from '@/state/storage';
 import { useToast } from '@/components/ui/use-toast';
+import { YjsDocStats } from './yjs-doc-stats';
 
 interface VersionsInspectorProps {
     file: FileDescriptor;
@@ -125,6 +126,9 @@ export function VersionsInspector({ file, onConnectVersion }: VersionsInspectorP
                     </div>
                 )}
             </div>
+
+            {/* Live yjs server stats: on-disk size, wire size, connections, realtime */}
+            {file.roomId && <YjsDocStats roomId={file.roomId} />}
 
             {/* Document Info */}
             <div className="space-y-4">
